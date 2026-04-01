@@ -261,9 +261,9 @@ async function startAnalyze() {
     result.value = parsed
     isSuccess.value = true
     activeStep.value = progressSteps.length - 1
-  } catch {
+  } catch (error) {
     isError.value = true
-    errorText.value = defaultErrorText
+    errorText.value = error instanceof Error && error.message ? `解析失败：${error.message}` : defaultErrorText
   } finally {
     clearTimer()
     isLoading.value = false

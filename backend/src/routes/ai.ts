@@ -69,14 +69,16 @@ router.post('/resume/analyze', upload.single('file'), async (req: Request, res: 
       cause?: unknown
     }
 
+    const statusCode = error instanceof HttpError ? error.statusCode : err?.status ?? 500
+
     console.error(`[analyze:${traceId}] request failed`, {
       message: err?.message ?? 'unknown error',
-      status: err?.status,
+      status: statusCode,
       detail: err?.response?.data,
       cause: err?.cause
     })
 
-    res.status(500).json({
+    res.status(statusCode).json({
       message: err?.message ?? '服务器内部错误',
       detail: err?.response?.data
     })

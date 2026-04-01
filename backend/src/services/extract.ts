@@ -84,17 +84,30 @@ export async function extractResumeText(fileBuffer: Buffer, filename: string, mi
   const ext = getExt(filename)
   let text = ''
 
-  if (ext === 'pdf') {
-    text = await extractPdfText(fileBuffer)
-    if (!hasEnoughText(text)) {
-      text = await callOcrFallback(fileBuffer, filename, mimetype)
+  try {
+    if (ext === 'pdf') {
+      text = await extractPdfText(fileBuffer)
+      if (!hasEnoughText(text)) {
+        const baseText = text.trim()
+        if (config.ocrApiUrl) {
+          const ocrText = await callOcrFallback(fileBuffer, filename, mimetype)
+          text = ocrText.trim() || baseText
+        } else if (!baseText) {
+          throw new HttpError(422, '简历未提取到有效文本，请上传可复制文本的 PDF，或配置 OCR_API_URL')
+        }
+      }
+    } else if (ext === 'docx') {
+      text = await extractDocxText(fileBuffer)
+    } else if (ext === 'doc') {
+      text = await extractDocText(fileBuffer)
+    } else {
+      throw new HttpError(400, '仅支持 pdf/doc/docx 文件类型')
     }
-  } else if (ext === 'docx') {
-    text = await extractDocxText(fileBuffer)
-  } else if (ext === 'doc') {
-    text = await extractDocText(fileBuffer)
-  } else {
-    throw new HttpError(400, '仅支持 pdf/doc/docx 文件类型')
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw error
+    }
+    throw new HttpError(422, '简历解析失败，请确认文件格式正确且内容未损坏')
   }
 
   const normalized = text.trim()
