@@ -1,13 +1,13 @@
 <template>
   <div class="layout">
-    <aside class="sidebar" :class="{ hidden: appStore.isCollapse }">
+    <aside v-if="!isMobile" class="sidebar" :class="{ hidden: appStore.isCollapse }">
       <div class="logo">
         <span class="logo-mark">
           <Audit theme="outline" :size="18" fill="currentColor" />
         </span>
         <span v-show="!appStore.isCollapse">求职进度台</span>
       </div>
-      <el-menu :default-active="activeMenu" class="menu" router>
+      <el-menu :default-active="activeMenu" class="menu" router @select="handleMenuSelect">
         <el-menu-item index="/dashboard">
           <el-icon><House /></el-icon>
           <span>总览面板</span>
@@ -27,10 +27,46 @@
       </el-menu>
     </aside>
 
+    <el-drawer
+      v-model="mobileMenuVisible"
+      direction="ltr"
+      size="220px"
+      :with-header="false"
+      class="mobile-menu-drawer"
+    >
+      <div class="logo mobile-logo">
+        <span class="logo-mark">
+          <Audit theme="outline" :size="18" fill="currentColor" />
+        </span>
+        <span>求职进度台</span>
+      </div>
+      <el-menu :default-active="activeMenu" class="menu mobile-menu" router @select="handleMenuSelect">
+        <el-menu-item index="/dashboard">
+          <el-icon><House /></el-icon>
+          <span>总览面板</span>
+        </el-menu-item>
+        <el-menu-item index="/delivery">
+          <el-icon><Tickets /></el-icon>
+          <span>岗位投递</span>
+        </el-menu-item>
+        <el-menu-item index="/interview">
+          <el-icon><Memo /></el-icon>
+          <span>面试复盘</span>
+        </el-menu-item>
+        <el-menu-item index="/ai-resume">
+          <el-icon><Document /></el-icon>
+          <span>AI 简历解析</span>
+        </el-menu-item>
+      </el-menu>
+    </el-drawer>
+
     <div class="main">
       <header class="header">
         <div class="left">
-          <el-button text @click="appStore.toggleCollapse()">
+          <el-button v-if="isMobile" text class="mobile-menu-btn" @click="mobileMenuVisible = true">
+            <el-icon><Menu /></el-icon>
+          </el-button>
+          <el-button v-else text @click="appStore.toggleCollapse()">
             <el-icon><Expand /></el-icon>
           </el-button>
           <span class="header-title">{{ route.meta.title }}</span>
@@ -49,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Audit } from '@icon-park/vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
@@ -61,11 +97,35 @@ const appStore = useAppStore()
 const userStore = useUserStore()
 
 const activeMenu = computed(() => route.path)
+const isMobile = ref(false)
+const mobileMenuVisible = ref(false)
+
+function handleResize() {
+  isMobile.value = window.innerWidth < 768
+  if (!isMobile.value) {
+    mobileMenuVisible.value = false
+  }
+}
+
+function handleMenuSelect() {
+  if (isMobile.value) {
+    mobileMenuVisible.value = false
+  }
+}
 
 function handleLogout() {
   userStore.logout()
   router.push('/login')
 }
+
+onMounted(() => {
+  handleResize()
+  window.addEventListener('resize', handleResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+})
 </script>
 
 <style scoped lang="scss">
@@ -124,6 +184,34 @@ function handleLogout() {
   }
 }
 
+.mobile-logo {
+  justify-content: flex-start;
+  color: #111827;
+  border-bottom: 1px solid #eef2f7;
+  padding: 0 8px;
+}
+
+.mobile-menu-btn {
+  font-size: 18px;
+}
+
+:deep(.mobile-menu-drawer .el-drawer__body) {
+  padding: 0;
+}
+
+:deep(.mobile-menu) {
+  border-right: none;
+}
+
+:deep(.mobile-menu .el-menu-item) {
+  color: #1f2937;
+}
+
+:deep(.mobile-menu .el-menu-item.is-active) {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
 :deep(.el-menu) {
   background: transparent;
 }
@@ -174,5 +262,27 @@ function handleLogout() {
   flex: 1;
   padding: 20px;
   min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .header {
+    padding: 0 12px;
+
+    .header-title {
+      font-size: 16px;
+    }
+
+    .right {
+      gap: 8px;
+    }
+
+    .username {
+      display: none;
+    }
+  }
+
+  .content {
+    padding: 12px;
+  }
 }
 </style>

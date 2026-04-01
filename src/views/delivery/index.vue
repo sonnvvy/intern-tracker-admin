@@ -5,26 +5,30 @@
         <h2 class="page-title">岗位投递</h2>
         <div class="sub-title">管理目标岗位、优先级和下一步动作，并通过跟进记录把状态流转串起来</div>
       </div>
-      <el-button type="primary" @click="openCreateDialog">新增记录</el-button>
+      <div class="header-actions">
+        <el-button plain @click="openExportDialog">导出 Excel</el-button>
+        <el-button type="primary" @click="openCreateDialog">新增记录</el-button>
+      </div>
     </div>
 
     <div class="content-grid layout-fixed">
       <div class="page-card main-card">
         <div class="filter-bar compact-filter">
-        <el-input v-model="keyword" placeholder="搜索公司、岗位或备注" clearable style="width: 220px" />
-        <el-select v-model="status" placeholder="筛选状态" clearable style="width: 136px">
+        <el-input v-model="globalSearchInput" class="filter-item" placeholder="全局搜索：公司名 / 岗位名 / 城市" clearable style="width: 260px" />
+        <el-select v-model="status" class="filter-item" placeholder="筛选状态" clearable style="width: 136px">
           <el-option v-for="item in statusOptions" :key="item" :label="item" :value="item" />
         </el-select>
-        <el-select v-model="priority" placeholder="筛选优先级" clearable style="width: 136px">
+        <el-select v-model="priority" class="filter-item" placeholder="筛选优先级" clearable style="width: 136px">
           <el-option v-for="item in priorityOptions" :key="item" :label="item" :value="item" />
         </el-select>
-        <div class="toolbar-right">
+        <div class="filter-action-row">
+          <el-button type="primary" plain @click="handleSearchNow">查询</el-button>
           <el-button @click="resetFilter">重置</el-button>
         </div>
       </div>
 
       <div v-if="filteredList.length === 0" class="empty-state">
-        <el-empty description="当前筛选条件下没有符合的数据，试试重置筛选后再看" />
+        <el-empty description="暂无匹配数据" />
       </div>
 
       <template v-else>
@@ -32,7 +36,7 @@
           <el-table :data="pagedList" border table-layout="fixed" class="delivery-table">
             <el-table-column prop="companyName" label="目标公司" min-width="104" show-overflow-tooltip />
             <el-table-column prop="jobTitle" label="岗位名称" min-width="122" show-overflow-tooltip />
-            <el-table-column prop="channel" label="投递渠道" min-width="84" show-overflow-tooltip />
+            <el-table-column v-if="!isMobileView" prop="channel" label="投递渠道" min-width="84" show-overflow-tooltip />
             <el-table-column prop="city" label="工作城市" width="76" />
             <el-table-column label="优先级" width="88">
               <template #default="scope">
@@ -45,7 +49,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="deliveryDate" label="投递日期" width="100" />
-            <el-table-column prop="nextStep" label="下一步动作" min-width="148" show-overflow-tooltip />
+            <el-table-column v-if="!isMobileView" prop="nextStep" label="下一步动作" min-width="148" show-overflow-tooltip />
             <el-table-column label="操作" width="96" align="center">
               <template #default="scope">
                 <div class="action-group">
@@ -84,7 +88,7 @@
       </div>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑投递记录' : '新增投递记录'" width="560px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑投递记录' : '新增投递记录'" :width="dialogWidth">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="92px">
         <el-form-item label="目标公司" prop="companyName">
           <el-input v-model="form.companyName" placeholder="例如：青禾数据" maxlength="20" show-word-limit />
@@ -158,7 +162,7 @@
       </div>
     </el-drawer>
 
-    <el-dialog v-model="followDialogVisible" title="新增跟进记录" width="520px">
+    <el-dialog v-model="followDialogVisible" title="新增跟进记录" :width="dialogWidth">
       <el-form ref="followFormRef" :model="followForm" :rules="followRules" label-width="92px">
         <el-form-item label="记录日期" prop="date">
           <el-input v-model="followForm.date" placeholder="例如：2026-03-10" />
@@ -175,23 +179,39 @@
         <el-button type="primary" @click="submitFollowUp">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="exportDialogVisible" title="自定义导出列" :width="dialogWidth">
+      <div class="export-desc">请勾选要导出的字段，然后选择导出范围。</div>
+      <el-checkbox-group v-model="selectedExportColumns" class="export-columns">
+        <el-checkbox v-for="item in exportColumnOptions" :key="item.key" :value="item.key">{{ item.label }}</el-checkbox>
+      </el-checkbox-group>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button :loading="exportLoading" @click="handleExportCurrentPage">导出当前页</el-button>
+        <el-button type="primary" :loading="exportLoading" @click="handleExportAll">导出全部</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import * as XLSX from 'xlsx'
 import { useDeliveryStore } from '@/stores/delivery'
 import StatusTag from '@/components/StatusTag.vue'
 import type { DeliveryItem, DeliveryStatus, PriorityLevel } from '@/types'
 
 const deliveryStore = useDeliveryStore()
-const keyword = ref('')
+const globalSearchInput = ref('')
+const globalSearchKeyword = ref('')
 const status = ref<DeliveryStatus | ''>('')
 const priority = ref<PriorityLevel | ''>('')
 const dialogVisible = ref(false)
 const drawerVisible = ref(false)
 const followDialogVisible = ref(false)
+const exportDialogVisible = ref(false)
+const exportLoading = ref(false)
 const isEdit = ref(false)
 const page = ref(1)
 const pageSize = ref(5)
@@ -199,6 +219,46 @@ const formRef = ref<FormInstance>()
 const followFormRef = ref<FormInstance>()
 const currentRow = ref<DeliveryItem | null>(null)
 const editingId = ref<number | null>(null)
+const isMobileView = ref(false)
+
+type ExportColumnKey =
+  | 'companyName'
+  | 'jobTitle'
+  | 'channel'
+  | 'city'
+  | 'priority'
+  | 'status'
+  | 'deliveryDate'
+  | 'nextStep'
+  | 'remark'
+
+interface ExportColumnOption {
+  key: ExportColumnKey
+  label: string
+}
+
+const exportColumnOptions: ExportColumnOption[] = [
+  { key: 'companyName', label: '目标公司' },
+  { key: 'jobTitle', label: '岗位名称' },
+  { key: 'channel', label: '投递渠道' },
+  { key: 'city', label: '工作城市' },
+  { key: 'priority', label: '优先级' },
+  { key: 'status', label: '当前状态' },
+  { key: 'deliveryDate', label: '投递日期' },
+  { key: 'nextStep', label: '下一步动作' },
+  { key: 'remark', label: '备注信息' }
+]
+
+const selectedExportColumns = ref<ExportColumnKey[]>([
+  'companyName',
+  'jobTitle',
+  'status',
+  'deliveryDate',
+  'priority',
+  'nextStep'
+])
+
+const dialogWidth = computed(() => (isMobileView.value ? 'calc(100vw - 32px)' : '560px'))
 
 const statusOptions: DeliveryStatus[] = ['已投递', '笔试中', '面试中', '已录用', '已拒绝']
 const priorityOptions: PriorityLevel[] = ['高优先级', '正常跟进', '保底机会']
@@ -238,13 +298,39 @@ const followRules: FormRules<typeof followForm> = {
   note: [{ required: true, message: '请填写补充说明', trigger: 'blur' }]
 }
 
+function debounce<T extends (...args: never[]) => void>(fn: T, delay = 300) {
+  let timer: number | null = null
+  return (...args: Parameters<T>) => {
+    if (timer !== null) {
+      window.clearTimeout(timer)
+    }
+    timer = window.setTimeout(() => {
+      fn(...args)
+    }, delay)
+  }
+}
+
+const applyGlobalSearch = debounce((value: string) => {
+  globalSearchKeyword.value = value.trim().toLowerCase()
+  page.value = 1
+}, 300)
+
+watch(globalSearchInput, (value) => {
+  applyGlobalSearch(value)
+})
+
+function syncMobileView() {
+  isMobileView.value = window.innerWidth < 768
+}
+
 const filteredList = computed(() => {
   return deliveryStore.list.filter((item) => {
+    const normalizedKeyword = globalSearchKeyword.value
     const matchKeyword =
-      !keyword.value ||
-      item.companyName.includes(keyword.value) ||
-      item.jobTitle.includes(keyword.value) ||
-      (item.remark || '').includes(keyword.value)
+      !normalizedKeyword ||
+      item.companyName.toLowerCase().includes(normalizedKeyword) ||
+      item.jobTitle.toLowerCase().includes(normalizedKeyword) ||
+      item.city.toLowerCase().includes(normalizedKeyword)
     const matchStatus = !status.value || item.status === status.value
     const matchPriority = !priority.value || item.priority === priority.value
     return matchKeyword && matchStatus && matchPriority
@@ -264,14 +350,20 @@ const prioritySummary = computed(() => [
   { label: '保底机会', value: deliveryStore.list.filter((item) => item.priority === '保底机会').length }
 ])
 
-watch([keyword, status, priority], () => {
+watch([status, priority], () => {
   page.value = 1
 })
 
 function resetFilter() {
-  keyword.value = ''
+  globalSearchInput.value = ''
+  globalSearchKeyword.value = ''
   status.value = ''
   priority.value = ''
+}
+
+function handleSearchNow() {
+  globalSearchKeyword.value = globalSearchInput.value.trim().toLowerCase()
+  page.value = 1
 }
 
 function resetForm() {
@@ -291,6 +383,10 @@ function openCreateDialog() {
   isEdit.value = false
   resetForm()
   dialogVisible.value = true
+}
+
+function openExportDialog() {
+  exportDialogVisible.value = true
 }
 
 function handlePreview(row: DeliveryItem) {
@@ -348,6 +444,82 @@ async function handleDelete(id: number) {
   deliveryStore.removeDelivery(id)
   ElMessage.success('删除成功')
 }
+
+function formatExportData(source: DeliveryItem[]): Array<Record<string, string>> {
+  const columns = exportColumnOptions.filter((item) => selectedExportColumns.value.includes(item.key))
+
+  return source.map((item) => {
+    const row: Record<string, string> = {}
+    columns.forEach((column) => {
+      if (column.key === 'remark') {
+        row[column.label] = item.remark || ''
+      } else if (column.key === 'deliveryDate') {
+        row[column.label] = item.deliveryDate
+      } else {
+        row[column.label] = String(item[column.key])
+      }
+    })
+    return row
+  })
+}
+
+function exportToExcel(rows: DeliveryItem[]) {
+  if (selectedExportColumns.value.length === 0) {
+    ElMessage.warning('请至少选择一个导出字段')
+    return
+  }
+
+  if (rows.length === 0) {
+    ElMessage.warning('当前没有可导出的数据')
+    return
+  }
+
+  const data = formatExportData(rows)
+  const worksheet = XLSX.utils.json_to_sheet(data)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, '岗位投递')
+
+  const date = new Date().toISOString().slice(0, 10)
+  XLSX.writeFile(workbook, `job-list-${date}.xlsx`)
+}
+
+function withExportLoading(task: () => void) {
+  exportLoading.value = true
+  try {
+    task()
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+function handleExportCurrentPage() {
+  withExportLoading(() => {
+    exportToExcel(pagedList.value)
+    if (pagedList.value.length > 0) {
+      ElMessage.success('已导出当前页数据')
+      exportDialogVisible.value = false
+    }
+  })
+}
+
+function handleExportAll() {
+  withExportLoading(() => {
+    exportToExcel(filteredList.value)
+    if (filteredList.value.length > 0) {
+      ElMessage.success('已导出全部筛选数据')
+      exportDialogVisible.value = false
+    }
+  })
+}
+
+onMounted(() => {
+  syncMobileView()
+  window.addEventListener('resize', syncMobileView)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncMobileView)
+})
 </script>
 
 <style scoped lang="scss">
@@ -376,6 +548,12 @@ async function handleDelete(id: number) {
   gap: 16px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .sub-title {
   margin-top: 6px;
   color: #94a3b8;
@@ -396,6 +574,13 @@ async function handleDelete(id: number) {
 .compact-filter {
   margin-bottom: 20px;
   flex-wrap: wrap;
+}
+
+.filter-action-row {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .table-wrap {
@@ -588,6 +773,17 @@ async function handleDelete(id: number) {
   font-size: 13px;
 }
 
+.export-desc {
+  color: #64748b;
+  margin-bottom: 12px;
+}
+
+.export-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 8px;
+}
+
 @media (max-width: 1280px) {
   .layout-fixed {
     grid-template-columns: minmax(0, 1fr) 280px;
@@ -605,6 +801,68 @@ async function handleDelete(id: number) {
 
   .toolbar-right {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .summary-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .compact-filter {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .filter-item {
+    width: 100%;
+  }
+
+  :deep(.filter-item .el-input__wrapper),
+  :deep(.filter-item .el-select__wrapper) {
+    width: 100%;
+  }
+
+  .filter-action-row {
+    margin-left: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  :deep(.filter-action-row .el-button) {
+    height: 40px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .delivery-table {
+    min-width: 700px;
+  }
+
+  :deep(.el-dialog) {
+    margin-top: 6vh !important;
+  }
+
+  :deep(.el-dialog__body) {
+    max-height: 66vh;
+    overflow-y: auto;
+  }
+
+  .export-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>
