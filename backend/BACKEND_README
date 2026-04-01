@@ -1,0 +1,83 @@
+# AI 简历解析后端说明
+
+## 1. 接口说明
+- 方法：POST
+- 路径：/ai/resume/analyze
+- Content-Type：multipart/form-data
+- 文件字段：file
+- 文件限制：pdf/doc/docx，且 <= 10MB
+
+### 成功响应字段（严格匹配）
+```json
+{
+  "name": "string",
+  "education": "string",
+  "major": "string",
+  "skills": ["string"],
+  "projects": ["string"],
+  "internships": ["string"],
+  "jobDirections": ["string"],
+  "advice": ["string"]
+}
+```
+
+## 2. 请求示例
+```bash
+curl -X POST "http://localhost:3001/ai/resume/analyze" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@./sample-resume.pdf"
+```
+
+## 3. 成功示例
+```json
+{
+  "name": "张三",
+  "education": "本科",
+  "major": "软件工程",
+  "skills": ["Vue3", "TypeScript", "Pinia"],
+  "projects": [
+    "企业中后台管理系统：负责权限模块、表格性能优化与组件封装"
+  ],
+  "internships": [
+    "XX 科技前端实习：参与活动页开发与接口联调"
+  ],
+  "jobDirections": ["前端开发工程师", "中后台前端工程师"],
+  "advice": [
+    "补充项目量化指标（如页面加载优化 30%）",
+    "将技能按熟练度分层展示"
+  ]
+}
+```
+
+## 4. 失败示例
+```json
+{
+  "message": "文件类型不支持，仅允许 pdf/doc/docx"
+}
+```
+
+## 5. 错误码
+- 400：请求参数错误（缺少文件、类型不支持、大小超限）
+- 422：文件可读但未提取到有效文本
+- 500：服务内部错误（配置缺失、运行异常）
+- 502：上游 AI/OCR 服务调用失败或返回异常
+
+## 6. 解析链路
+1. 接收并校验文件（类型、大小、字段名）
+2. 文本提取：
+   - PDF：优先使用 PDF 文本提取
+   - DOCX：使用 mammoth 提取
+   - DOC：使用 word-extractor 提取
+3. OCR 兜底：PDF 提取文本不足时调用 OCR 服务
+4. 将文本提交大模型做结构化抽取
+5. 对结果做强制补全：string 缺失补 ""，array 缺失补 []，确保不缺 key
+
+## 7. 运行步骤
+```bash
+cd backend
+npm install
+cp backend.env.example .env
+npm run dev
+```
+
+服务默认地址：http://localhost:3001

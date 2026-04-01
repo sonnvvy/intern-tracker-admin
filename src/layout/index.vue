@@ -20,6 +20,10 @@
           <el-icon><Memo /></el-icon>
           <span>面试复盘</span>
         </el-menu-item>
+        <el-menu-item index="/ai-resume">
+          <el-icon><Document /></el-icon>
+          <span>AI 简历解析</span>
+        </el-menu-item>
       </el-menu>
     </aside>
 

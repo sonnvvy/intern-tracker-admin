@@ -32,6 +32,12 @@ const router = createRouter({
           name: 'interview',
           component: () => import('@/views/interview/index.vue'),
           meta: { title: '面试复盘' }
+        },
+        {
+          path: 'ai-resume',
+          name: 'aiResume',
+          component: () => import('@/views/ai-resume/index.vue'),
+          meta: { title: 'AI 简历解析' }
         }
       ]
     }

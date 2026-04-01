@@ -54,3 +54,14 @@ export interface TodoItem {
   hint: string
   level: '紧急' | '优先' | '常规'
 }
+
+export interface ResumeAnalysisResult {
+  name: string
+  education: string
+  major: string
+  skills: string[]
+  projects: string[]
+  internships: string[]
+  jobDirections: string[]
+  advice: string[]
+}
