@@ -67,3 +67,18 @@ export interface ResumeAnalysisResult {
   jobDirections: string[]
   advice: string[]
 }
+
+export interface ChatAssistantResult {
+  answer: string
+  keyPoints: string[]
+  followUps: string[]
+  confidence: 'low' | 'medium' | 'high'
+}
+
+export interface JobAdviceResult {
+  matchScore: number
+  missingSkills: string[]
+  resumeImprovements: string[]
+  interviewPrep: string[]
+  summary: string
+}

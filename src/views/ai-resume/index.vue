@@ -121,6 +121,8 @@
     <div v-else-if="!isLoading && !errorText" class="page-card empty-state-card">
       <el-empty description="上传简历后即可开始解析" />
     </div>
+
+    <AIAssistant />
   </div>
 </template>
 
@@ -131,6 +133,7 @@ import type { UploadFile, UploadFiles, UploadInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { analyzeResume } from '@/api/ai'
 import type { ResumeAnalysisResult } from '@/types'
+import AIAssistant from './components/AIAssistant.vue'
 
 interface ProgressStep {
   title: string

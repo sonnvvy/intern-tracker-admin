@@ -241,6 +241,39 @@ npm run start
 VITE_API_BASE_URL=https://your-backend-domain.com/ai
 ```
 
+本地开发如果要调试 `api/chat`、`api/job-advice`（Vercel Serverless），需要额外启动：
+
+```bash
+# 推荐：启动本地 API 服务（稳定，Windows 友好）
+npm run dev:api
+```
+
+说明：
+
+- 前端 `vite dev` 端口（如 5173）已通过 `vite.config.ts` 代理 `/api` 到 `http://localhost:3000`
+- 如果未启动 `dev:api`，访问 `/api/*` 会出现 500/404
+
+可选：如需模拟 Vercel 运行时，再使用：
+
+```bash
+npm run vercel:link
+npm run dev:api:vercel
+```
+
+本地 AI 能力依赖以下环境变量（可在根目录创建 `.env.local`，参考 `.env.local.example`）：
+
+```env
+# DeepSeek（OpenAI 兼容接口）
+DEEPSEEK_API_KEY=your_deepseek_api_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_MODEL=deepseek-chat
+
+# 或 OpenAI
+# OPENAI_API_KEY=your_openai_api_key
+# OPENAI_MODEL=gpt-4o-mini
+# OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
 ## 8.1 前端无法调用 AI 接口
 
 - 确认后端已启动在 3001 端口

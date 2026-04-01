@@ -5,27 +5,38 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "tsx watch scripts/local-api-server.ts",
+    "dev:api:vercel": "vercel dev --listen 3000 --yes",
+    "vercel:link": "vercel link --yes",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@langchain/core": "^1.1.38",
+    "@langchain/openai": "^1.4.1",
     "@element-plus/icons-vue": "^2.3.1",
     "axios": "^1.8.4",
+    "dotenv": "^16.4.7",
     "echarts": "^5.6.0",
     "element-plus": "^2.11.1",
+    "langchain": "^1.2.39",
     "pinia": "^3.0.3",
     "vue": "^3.5.13",
     "vue-router": "^4.5.1",
     "@icon-park/vue-next": "^1.4.2",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "@vercel/node": "^5.6.23",
     "@vitejs/plugin-vue": "^5.2.1",
     "sass": "^1.85.1",
+    "tsx": "^4.20.6",
     "typescript": "~5.7.2",
     "unplugin-auto-import": "^21.0.0",
     "unplugin-vue-components": "^32.0.0",
+    "vercel": "^50.38.1",
     "vite": "^6.2.0",
     "vue-tsc": "^2.2.4"
   }
