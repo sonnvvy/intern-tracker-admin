@@ -1,10 +1,11 @@
 <template>
-  <el-tag :type="tagType" :effect="effect"><slot>{{ text }}</slot></el-tag>
+  <el-tag :type="tagType" :effect="effect"><slot>{{ displayText }}</slot></el-tag>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { DeliveryStatus, InterviewResult, PriorityLevel } from '@/types'
+import { normalizeJobStatus, statusLabelMap, statusTagTypeMap } from '@/utils/statusMachine'
 
 const props = withDefaults(
   defineProps<{
@@ -33,13 +34,18 @@ const tagType = computed(() => {
     }
     return map[props.text] || 'info'
   }
-  const map: Record<string, 'info' | 'warning' | 'primary' | 'success' | 'danger'> = {
-    已投递: 'info',
-    笔试中: 'warning',
-    面试中: 'primary',
-    已录用: 'success',
-    已拒绝: 'danger'
+  if (typeof props.text !== 'string') {
+    return 'info'
   }
-  return map[props.text] || 'info'
+  const normalized = normalizeJobStatus(props.text)
+  return statusTagTypeMap[normalized]
+})
+
+const displayText = computed(() => {
+  if (props.mode !== 'delivery' || typeof props.text !== 'string') {
+    return props.text
+  }
+  const normalized = normalizeJobStatus(props.text)
+  return statusLabelMap[normalized]
 })
 </script>

@@ -1,4 +1,5 @@
 import type { DeliveryItem, InterviewItem } from '@/types'
+import { JOB_STATUS } from '@/utils/statusMachine'
 
 export const deliverySeeds: DeliveryItem[] = [
   {
@@ -6,7 +7,7 @@ export const deliverySeeds: DeliveryItem[] = [
     companyName: '云岫科技',
     jobTitle: '前端开发实习生',
     channel: '官网投递',
-    status: '面试中',
+    status: JOB_STATUS.FIRST_INTERVIEW,
     deliveryDate: '2026-03-05',
     city: '苏州',
     priority: '高优先级',
@@ -23,7 +24,7 @@ export const deliverySeeds: DeliveryItem[] = [
     companyName: '青禾数据',
     jobTitle: 'Web 前端实习生',
     channel: '招聘平台',
-    status: '已投递',
+    status: JOB_STATUS.APPLIED,
     deliveryDate: '2026-03-03',
     city: '杭州',
     priority: '正常跟进',
@@ -38,7 +39,7 @@ export const deliverySeeds: DeliveryItem[] = [
     companyName: '星屿网络',
     jobTitle: '前端工程师实习生',
     channel: '内推登记',
-    status: '已拒绝',
+    status: JOB_STATUS.REJECTED,
     deliveryDate: '2026-03-01',
     city: '上海',
     priority: '正常跟进',
@@ -54,7 +55,7 @@ export const deliverySeeds: DeliveryItem[] = [
     companyName: '木川软件',
     jobTitle: 'Vue 前端实习生',
     channel: '官网投递',
-    status: '笔试中',
+    status: JOB_STATUS.WRITTEN_TEST,
     deliveryDate: '2026-03-06',
     city: '南京',
     priority: '高优先级',
@@ -70,7 +71,7 @@ export const deliverySeeds: DeliveryItem[] = [
     companyName: '临风智联',
     jobTitle: '前端开发实习生',
     channel: '校园招聘',
-    status: '已录用',
+    status: JOB_STATUS.OFFER,
     deliveryDate: '2026-02-26',
     city: '无锡',
     priority: '保底机会',
@@ -87,7 +88,7 @@ export const deliverySeeds: DeliveryItem[] = [
     companyName: '栖川互动',
     jobTitle: '前端实习生',
     channel: '招聘平台',
-    status: '已投递',
+    status: JOB_STATUS.APPLIED,
     deliveryDate: '2026-03-07',
     city: '成都',
     priority: '正常跟进',

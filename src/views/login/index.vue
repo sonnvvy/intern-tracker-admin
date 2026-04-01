@@ -29,6 +29,7 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
+import { Lock, User } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useUserStore } from '@/stores/user'

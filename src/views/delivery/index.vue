@@ -14,9 +14,16 @@
     <div class="content-grid layout-fixed">
       <div class="page-card main-card">
         <div class="filter-bar compact-filter">
-        <el-input v-model="globalSearchInput" class="filter-item" placeholder="全局搜索：公司名 / 岗位名 / 城市" clearable style="width: 260px" />
+        <el-input
+          v-model="globalSearchInput"
+          class="filter-item"
+          placeholder="全局搜索：公司名 / 岗位名 / 城市"
+          clearable
+          style="width: 260px"
+          @keyup.enter="handleSearchNow"
+        />
         <el-select v-model="status" class="filter-item" placeholder="筛选状态" clearable style="width: 136px">
-          <el-option v-for="item in statusOptions" :key="item" :label="item" :value="item" />
+          <el-option v-for="item in statusOptions" :key="item" :label="statusLabelMap[item]" :value="item" />
         </el-select>
         <el-select v-model="priority" class="filter-item" placeholder="筛选优先级" clearable style="width: 136px">
           <el-option v-for="item in priorityOptions" :key="item" :label="item" :value="item" />
@@ -27,7 +34,11 @@
         </div>
       </div>
 
-      <div v-if="filteredList.length === 0" class="empty-state">
+      <div v-if="tableLoading" class="empty-state">
+        <el-skeleton animated :rows="6" />
+      </div>
+
+      <div v-else-if="filteredList.length === 0" class="empty-state">
         <el-empty description="暂无匹配数据" />
       </div>
 
@@ -38,22 +49,23 @@
             <el-table-column prop="jobTitle" label="岗位名称" min-width="122" show-overflow-tooltip />
             <el-table-column v-if="!isMobileView" prop="channel" label="投递渠道" min-width="84" show-overflow-tooltip />
             <el-table-column prop="city" label="工作城市" width="76" />
-            <el-table-column label="优先级" width="88">
+            <el-table-column label="优先级" width="116" align="center" class-name="priority-col">
               <template #default="scope">
                 <StatusTag :text="scope.row.priority" mode="priority" />
               </template>
             </el-table-column>
-            <el-table-column label="当前状态" width="88">
+            <el-table-column label="当前状态" width="104" align="center" class-name="status-col">
               <template #default="scope">
                 <StatusTag :text="scope.row.status" mode="delivery" />
               </template>
             </el-table-column>
             <el-table-column prop="deliveryDate" label="投递日期" width="100" />
             <el-table-column v-if="!isMobileView" prop="nextStep" label="下一步动作" min-width="148" show-overflow-tooltip />
-            <el-table-column label="操作" width="96" align="center">
+            <el-table-column label="操作" width="236" align="center" class-name="operation-col">
               <template #default="scope">
                 <div class="action-group">
                   <el-button link type="primary" @click="handlePreview(scope.row)">查看</el-button>
+                  <el-button link type="warning" @click="handleOpenStatusDialog(scope.row)">修改状态</el-button>
                   <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
                   <el-button link type="danger" @click="handleDelete(scope.row.id)">删除</el-button>
                 </div>
@@ -109,7 +121,7 @@
         </el-form-item>
         <el-form-item label="当前状态" prop="status">
           <el-select v-model="form.status" style="width: 100%">
-            <el-option v-for="item in statusOptions" :key="item" :label="item" :value="item" />
+            <el-option v-for="item in statusOptions" :key="item" :label="statusLabelMap[item]" :value="item" />
           </el-select>
         </el-form-item>
         <el-form-item label="下一步动作" prop="nextStep">
@@ -133,7 +145,7 @@
           <div class="detail-item"><span>投递渠道</span><strong>{{ currentRow.channel }}</strong></div>
           <div class="detail-item"><span>工作城市</span><strong>{{ currentRow.city }}</strong></div>
           <div class="detail-item"><span>优先级</span><strong>{{ currentRow.priority }}</strong></div>
-          <div class="detail-item"><span>当前状态</span><strong>{{ currentRow.status }}</strong></div>
+          <div class="detail-item"><span>当前状态</span><strong>{{ statusLabelMap[currentRow.status] }}</strong></div>
           <div class="detail-item detail-block"><span>下一步动作</span><strong>{{ currentRow.nextStep }}</strong></div>
           <div class="detail-item detail-block"><span>备注信息</span><strong>{{ currentRow.remark || '暂无' }}</strong></div>
         </div>
@@ -180,6 +192,23 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="statusDialogVisible" title="修改状态" :width="dialogWidth">
+      <el-form label-width="92px">
+        <el-form-item label="当前状态">
+          <el-tag>{{ currentStatusLabel }}</el-tag>
+        </el-form-item>
+        <el-form-item label="下一状态">
+          <el-select v-model="targetStatus" placeholder="请选择下一状态" style="width: 100%">
+            <el-option v-for="item in nextStatusOptions" :key="item" :label="statusLabelMap[item]" :value="item" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="statusDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleConfirmStatusTransfer">确认修改</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="exportDialogVisible" title="自定义导出列" :width="dialogWidth">
       <div class="export-desc">请勾选要导出的字段，然后选择导出范围。</div>
       <el-checkbox-group v-model="selectedExportColumns" class="export-columns">
@@ -187,37 +216,51 @@
       </el-checkbox-group>
       <template #footer>
         <el-button @click="exportDialogVisible = false">取消</el-button>
-        <el-button :loading="exportLoading" @click="handleExportCurrentPage">导出当前页</el-button>
-        <el-button type="primary" :loading="exportLoading" @click="handleExportAll">导出全部</el-button>
+        <el-button :loading="exportLoading" :disabled="exportLoading" @click="handleExportCurrentPage">导出当前页</el-button>
+        <el-button type="primary" :loading="exportLoading" :disabled="exportLoading" @click="handleExportAll">导出全部</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import * as XLSX from 'xlsx'
+import { useAppStore } from '@/stores/app'
 import { useDeliveryStore } from '@/stores/delivery'
-import StatusTag from '@/components/StatusTag.vue'
+import { debounce, throttle } from '@/utils/performance'
 import type { DeliveryItem, DeliveryStatus, PriorityLevel } from '@/types'
+import {
+  JOB_STATUS,
+  canTransfer,
+  getNextStatusList,
+  statusFlowOrder,
+  statusLabelMap
+} from '@/utils/statusMachine'
+
+const StatusTag = defineAsyncComponent(() => import('@/components/StatusTag.vue'))
 
 const deliveryStore = useDeliveryStore()
-const globalSearchInput = ref('')
-const globalSearchKeyword = ref('')
-const status = ref<DeliveryStatus | ''>('')
-const priority = ref<PriorityLevel | ''>('')
+const appStore = useAppStore()
+const globalSearchInput = ref(appStore.deliveryViewCache.globalSearchInput)
+const globalSearchKeyword = ref(appStore.deliveryViewCache.globalSearchInput.trim().toLowerCase())
+const status = ref<DeliveryStatus | ''>((appStore.deliveryViewCache.status as DeliveryStatus | '') || '')
+const priority = ref<PriorityLevel | ''>((appStore.deliveryViewCache.priority as PriorityLevel | '') || '')
 const dialogVisible = ref(false)
 const drawerVisible = ref(false)
 const followDialogVisible = ref(false)
+const statusDialogVisible = ref(false)
 const exportDialogVisible = ref(false)
 const exportLoading = ref(false)
+const tableLoading = ref(true)
 const isEdit = ref(false)
-const page = ref(1)
-const pageSize = ref(5)
+const page = ref(appStore.deliveryViewCache.page || 1)
+const pageSize = ref(appStore.deliveryViewCache.pageSize || 5)
 const formRef = ref<FormInstance>()
 const followFormRef = ref<FormInstance>()
 const currentRow = ref<DeliveryItem | null>(null)
+const statusRow = ref<DeliveryItem | null>(null)
+const targetStatus = ref<DeliveryStatus | ''>('')
 const editingId = ref<number | null>(null)
 const isMobileView = ref(false)
 
@@ -250,24 +293,29 @@ const exportColumnOptions: ExportColumnOption[] = [
 ]
 
 const selectedExportColumns = ref<ExportColumnKey[]>([
-  'companyName',
-  'jobTitle',
-  'status',
-  'deliveryDate',
-  'priority',
-  'nextStep'
+  ...(appStore.deliveryViewCache.selectedExportColumns as ExportColumnKey[])
 ])
 
 const dialogWidth = computed(() => (isMobileView.value ? 'calc(100vw - 32px)' : '560px'))
 
-const statusOptions: DeliveryStatus[] = ['已投递', '笔试中', '面试中', '已录用', '已拒绝']
+const statusOptions: DeliveryStatus[] = statusFlowOrder
 const priorityOptions: PriorityLevel[] = ['高优先级', '正常跟进', '保底机会']
+
+const nextStatusOptions = computed<DeliveryStatus[]>(() => {
+  if (!statusRow.value) return []
+  return getNextStatusList(statusRow.value.status)
+})
+
+const currentStatusLabel = computed(() => {
+  if (!statusRow.value) return '-'
+  return statusLabelMap[statusRow.value.status]
+})
 
 const createEmptyForm = () => ({
   companyName: '',
   jobTitle: '',
   channel: '',
-  status: '已投递' as DeliveryStatus,
+  status: JOB_STATUS.APPLIED as DeliveryStatus,
   city: '',
   priority: '正常跟进' as PriorityLevel,
   nextStep: '',
@@ -298,18 +346,6 @@ const followRules: FormRules<typeof followForm> = {
   note: [{ required: true, message: '请填写补充说明', trigger: 'blur' }]
 }
 
-function debounce<T extends (...args: never[]) => void>(fn: T, delay = 300) {
-  let timer: number | null = null
-  return (...args: Parameters<T>) => {
-    if (timer !== null) {
-      window.clearTimeout(timer)
-    }
-    timer = window.setTimeout(() => {
-      fn(...args)
-    }, delay)
-  }
-}
-
 const applyGlobalSearch = debounce((value: string) => {
   globalSearchKeyword.value = value.trim().toLowerCase()
   page.value = 1
@@ -319,9 +355,9 @@ watch(globalSearchInput, (value) => {
   applyGlobalSearch(value)
 })
 
-function syncMobileView() {
+const syncMobileView = throttle(() => {
   isMobileView.value = window.innerWidth < 768
-}
+}, 200)
 
 const filteredList = computed(() => {
   return deliveryStore.list.filter((item) => {
@@ -354,11 +390,26 @@ watch([status, priority], () => {
   page.value = 1
 })
 
+watch([globalSearchInput, status, priority, page, pageSize, selectedExportColumns], () => {
+  appStore.updateDeliveryViewCache({
+    globalSearchInput: globalSearchInput.value,
+    status: status.value,
+    priority: priority.value,
+    page: page.value,
+    pageSize: pageSize.value,
+    selectedExportColumns: [...selectedExportColumns.value]
+  })
+})
+
 function resetFilter() {
+  appStore.resetDeliveryViewCache()
   globalSearchInput.value = ''
   globalSearchKeyword.value = ''
   status.value = ''
   priority.value = ''
+  page.value = 1
+  pageSize.value = 5
+  selectedExportColumns.value = ['companyName', 'jobTitle', 'status', 'deliveryDate', 'priority', 'nextStep']
 }
 
 function handleSearchNow() {
@@ -410,6 +461,44 @@ function handleEdit(row: DeliveryItem) {
   dialogVisible.value = true
 }
 
+function handleOpenStatusDialog(row: DeliveryItem) {
+  const nextList = getNextStatusList(row.status)
+  if (nextList.length === 0) {
+    ElMessage.info('当前状态已终止，无法继续流转')
+    return
+  }
+
+  statusRow.value = row
+  targetStatus.value = ''
+  statusDialogVisible.value = true
+}
+
+function handleConfirmStatusTransfer() {
+  if (!statusRow.value || !targetStatus.value) {
+    ElMessage.warning('请选择下一状态')
+    return
+  }
+
+  if (!canTransfer(statusRow.value.status, targetStatus.value)) {
+    ElMessage.error('非法状态流转，请选择合法下一状态')
+    return
+  }
+
+  const result = deliveryStore.transferDeliveryStatus(statusRow.value.id, targetStatus.value)
+  if (!result.ok) {
+    ElMessage.error(result.message)
+    return
+  }
+
+  if (currentRow.value?.id === statusRow.value.id) {
+    const latest = deliveryStore.list.find((item) => item.id === statusRow.value?.id)
+    currentRow.value = latest || null
+  }
+
+  ElMessage.success(result.message)
+  statusDialogVisible.value = false
+}
+
 async function submitForm() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
@@ -453,6 +542,8 @@ function formatExportData(source: DeliveryItem[]): Array<Record<string, string>>
     columns.forEach((column) => {
       if (column.key === 'remark') {
         row[column.label] = item.remark || ''
+      } else if (column.key === 'status') {
+        row[column.label] = statusLabelMap[item.status]
       } else if (column.key === 'deliveryDate') {
         row[column.label] = item.deliveryDate
       } else {
@@ -463,7 +554,7 @@ function formatExportData(source: DeliveryItem[]): Array<Record<string, string>>
   })
 }
 
-function exportToExcel(rows: DeliveryItem[]) {
+async function exportToExcel(rows: DeliveryItem[]) {
   if (selectedExportColumns.value.length === 0) {
     ElMessage.warning('请至少选择一个导出字段')
     return
@@ -475,6 +566,7 @@ function exportToExcel(rows: DeliveryItem[]) {
   }
 
   const data = formatExportData(rows)
+  const XLSX = await import('xlsx')
   const worksheet = XLSX.utils.json_to_sheet(data)
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, worksheet, '岗位投递')
@@ -483,18 +575,19 @@ function exportToExcel(rows: DeliveryItem[]) {
   XLSX.writeFile(workbook, `job-list-${date}.xlsx`)
 }
 
-function withExportLoading(task: () => void) {
+async function withExportLoading(task: () => Promise<void>) {
+  if (exportLoading.value) return
   exportLoading.value = true
   try {
-    task()
+    await task()
   } finally {
     exportLoading.value = false
   }
 }
 
 function handleExportCurrentPage() {
-  withExportLoading(() => {
-    exportToExcel(pagedList.value)
+  withExportLoading(async () => {
+    await exportToExcel(pagedList.value)
     if (pagedList.value.length > 0) {
       ElMessage.success('已导出当前页数据')
       exportDialogVisible.value = false
@@ -503,8 +596,8 @@ function handleExportCurrentPage() {
 }
 
 function handleExportAll() {
-  withExportLoading(() => {
-    exportToExcel(filteredList.value)
+  withExportLoading(async () => {
+    await exportToExcel(filteredList.value)
     if (filteredList.value.length > 0) {
       ElMessage.success('已导出全部筛选数据')
       exportDialogVisible.value = false
@@ -514,6 +607,9 @@ function handleExportAll() {
 
 onMounted(() => {
   syncMobileView()
+  window.setTimeout(() => {
+    tableLoading.value = false
+  }, 280)
   window.addEventListener('resize', syncMobileView)
 })
 
@@ -567,7 +663,7 @@ onBeforeUnmount(() => {
 }
 
 .main-card {
-  overflow: hidden;
+  overflow: visible;
   max-width: 100%;
 }
 
@@ -591,11 +687,13 @@ onBeforeUnmount(() => {
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   scrollbar-gutter: stable;
+  padding-right: 14px;
+  padding-bottom: 10px;
 }
 
 .delivery-table {
   width: 100%;
-  min-width: 900px;
+  min-width: 1120px;
 }
 
 .empty-state {
@@ -605,18 +703,19 @@ onBeforeUnmount(() => {
 .action-group {
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 8px;
 }
 
 :deep(.action-group .el-button) {
-  margin-left: 0;
-  margin-right: 0;
+  margin: 0;
   padding: 0;
-  min-height: 24px;
-  justify-content: center;
+  min-height: 28px;
   text-align: center;
+  white-space: nowrap;
 }
 
 
@@ -675,6 +774,18 @@ onBeforeUnmount(() => {
 
 :deep(.delivery-table .el-table__cell) {
   padding: 10px 0;
+}
+
+:deep(.priority-col .cell),
+:deep(.operation-col .cell) {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+:deep(.priority-col .cell),
+:deep(.status-col .cell) {
+  display: flex;
+  justify-content: center;
 }
 
 .detail-shell {
@@ -790,7 +901,7 @@ onBeforeUnmount(() => {
   }
 
   .delivery-table {
-    min-width: 860px;
+    min-width: 1080px;
   }
 }
 
@@ -849,7 +960,7 @@ onBeforeUnmount(() => {
   }
 
   .delivery-table {
-    min-width: 700px;
+    min-width: 920px;
   }
 
   :deep(.el-dialog) {

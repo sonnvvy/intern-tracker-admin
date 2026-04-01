@@ -32,7 +32,10 @@
             <div class="section-desc">按岗位状态聚合统计，快速看清推进结构</div>
           </div>
         </div>
-        <div ref="statusChartRef" class="chart-inner"></div>
+        <div v-if="chartLoading" class="chart-skeleton-wrap">
+          <el-skeleton animated :rows="6" />
+        </div>
+        <div v-else ref="statusChartRef" class="chart-inner"></div>
       </div>
       <div class="page-card chart-card">
         <div class="card-head">
@@ -41,7 +44,10 @@
             <div class="section-desc">按日期汇总投递数量，用来判断当前推进节奏</div>
           </div>
         </div>
-        <div ref="trendChartRef" class="chart-inner"></div>
+        <div v-if="chartLoading" class="chart-skeleton-wrap">
+          <el-skeleton animated :rows="6" />
+        </div>
+        <div v-else ref="trendChartRef" class="chart-inner"></div>
       </div>
     </div>
 
@@ -53,7 +59,9 @@
             <div class="section-desc">根据投递记录中的下一步动作自动生成</div>
           </div>
         </div>
-        <div v-for="item in deliveryStore.todoList" :key="item.id" class="todo-item">
+        <el-skeleton v-if="listLoading" animated :rows="4" />
+        <div v-else-if="deliveryStore.todoList.length === 0" class="empty-inline">暂无待处理事项</div>
+        <div v-else v-for="item in deliveryStore.todoList" :key="item.id" class="todo-item">
           <div>
             <div class="todo-title">{{ item.title }}</div>
             <div class="todo-hint">{{ item.hint }}</div>
@@ -69,7 +77,9 @@
             <div class="section-desc">展示最近处理过的岗位，方便快速回看</div>
           </div>
         </div>
-        <div v-for="item in recentList" :key="item.id" class="timeline-item">
+        <el-skeleton v-if="listLoading" animated :rows="4" />
+        <div v-else-if="recentList.length === 0" class="empty-inline">暂无投递记录</div>
+        <div v-else v-for="item in recentList" :key="item.id" class="timeline-item">
           <div>
             <div class="timeline-title">{{ item.companyName }} / {{ item.jobTitle }}</div>
             <div class="timeline-desc">{{ item.deliveryDate }} · {{ item.channel }} · {{ item.city }}</div>
@@ -99,21 +109,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import * as echarts from 'echarts'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Bell, Files, Promotion, Select } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { useDeliveryStore } from '@/stores/delivery'
 import { useInterviewStore } from '@/stores/interview'
-import StatCard from '@/components/StatCard.vue'
-import StatusTag from '@/components/StatusTag.vue'
+import { throttle } from '@/utils/performance'
+
+const StatCard = defineAsyncComponent(() => import('@/components/StatCard.vue'))
+const StatusTag = defineAsyncComponent(() => import('@/components/StatusTag.vue'))
+
+type EchartsModule = typeof import('echarts')
 
 const userStore = useUserStore()
 const deliveryStore = useDeliveryStore()
 const interviewStore = useInterviewStore()
 const statusChartRef = ref<HTMLElement | null>(null)
 const trendChartRef = ref<HTMLElement | null>(null)
-let statusChart: echarts.ECharts | null = null
-let trendChart: echarts.ECharts | null = null
+const chartLoading = ref(true)
+const listLoading = ref(true)
+let echartsModule: EchartsModule | null = null
+let statusChart: import('echarts').ECharts | null = null
+let trendChart: import('echarts').ECharts | null = null
 
 const todoTagType: Record<'紧急' | '优先' | '常规', 'danger' | 'warning' | 'info'> = {
   紧急: 'danger',
@@ -122,16 +139,23 @@ const todoTagType: Record<'紧急' | '优先' | '常规', 'danger' | 'warning' |
 }
 
 const statCards = computed(() => [
-  { label: '累计投递', value: deliveryStore.dashboardStats.total, desc: '统一记录全部投递历史', icon: 'Files', iconClass: 'icon-blue' },
-  { label: '推进中', value: deliveryStore.dashboardStats.interviewing, desc: '包含笔试和面试中的岗位', icon: 'Promotion', iconClass: 'icon-orange' },
-  { label: '已拿到机会', value: deliveryStore.dashboardStats.offered, desc: '先稳住保底节奏，再对比其他机会', icon: 'Select', iconClass: 'icon-green' },
-  { label: '待跟进面试', value: interviewStore.upcomingCount, desc: '根据复盘继续查漏补缺', icon: 'Bell', iconClass: 'icon-purple' }
+  { label: '累计投递', value: deliveryStore.dashboardStats.total, desc: '统一记录全部投递历史', icon: Files, iconClass: 'icon-blue' },
+  { label: '推进中', value: deliveryStore.dashboardStats.interviewing, desc: '包含笔试和面试中的岗位', icon: Promotion, iconClass: 'icon-orange' },
+  { label: '已拿到机会', value: deliveryStore.dashboardStats.offered, desc: '先稳住保底节奏，再对比其他机会', icon: Select, iconClass: 'icon-green' },
+  { label: '待跟进面试', value: interviewStore.upcomingCount, desc: '根据复盘继续查漏补缺', icon: Bell, iconClass: 'icon-purple' }
 ])
 
 const recentList = computed(() => deliveryStore.list.slice(0, 4))
 
-function renderStatusChart() {
+async function ensureEcharts() {
+  if (echartsModule) return echartsModule
+  echartsModule = await import('echarts')
+  return echartsModule
+}
+
+async function renderStatusChart() {
   if (!statusChartRef.value) return
+  const echarts = await ensureEcharts()
   statusChart ??= echarts.init(statusChartRef.value)
   statusChart.setOption({
     tooltip: { trigger: 'item' },
@@ -147,8 +171,9 @@ function renderStatusChart() {
   })
 }
 
-function renderTrendChart() {
+async function renderTrendChart() {
   if (!trendChartRef.value) return
+  const echarts = await ensureEcharts()
   trendChart ??= echarts.init(trendChartRef.value)
   trendChart.setOption({
     tooltip: { trigger: 'axis' },
@@ -170,25 +195,30 @@ function renderTrendChart() {
   })
 }
 
-function handleResize() {
+const handleResize = throttle(() => {
   statusChart?.resize()
   trendChart?.resize()
-}
+}, 180)
 
 watch(
   () => [deliveryStore.list.length, interviewStore.list.length],
   async () => {
     await nextTick()
-    renderStatusChart()
-    renderTrendChart()
+    await renderStatusChart()
+    await renderTrendChart()
   },
   { deep: true }
 )
 
 onMounted(async () => {
   await nextTick()
-  renderStatusChart()
-  renderTrendChart()
+  await renderStatusChart()
+  await renderTrendChart()
+  chartLoading.value = false
+  // 列表骨架只在首屏短暂显示，减少“白屏感”。
+  window.setTimeout(() => {
+    listLoading.value = false
+  }, 320)
   window.addEventListener('resize', handleResize)
 })
 
@@ -282,6 +312,16 @@ onBeforeUnmount(() => {
 .chart-inner {
   width: 100%;
   height: 320px;
+}
+
+.chart-skeleton-wrap {
+  padding: 10px 0;
+}
+
+.empty-inline {
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 .todo-item,

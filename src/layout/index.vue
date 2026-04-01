@@ -87,9 +87,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Audit } from '@icon-park/vue-next'
+import { Document, Expand, House, Memo, Menu, Tickets } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useUserStore } from '@/stores/user'
+import { throttle } from '@/utils/performance'
 
 const route = useRoute()
 const router = useRouter()
@@ -100,12 +102,12 @@ const activeMenu = computed(() => route.path)
 const isMobile = ref(false)
 const mobileMenuVisible = ref(false)
 
-function handleResize() {
+const handleResize = throttle(() => {
   isMobile.value = window.innerWidth < 768
   if (!isMobile.value) {
     mobileMenuVisible.value = false
   }
-}
+}, 200)
 
 function handleMenuSelect() {
   if (isMobile.value) {

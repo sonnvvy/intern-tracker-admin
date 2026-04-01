@@ -126,6 +126,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { UploadFilled } from '@element-plus/icons-vue'
 import type { UploadFile, UploadFiles, UploadInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { analyzeResume } from '@/api/ai'

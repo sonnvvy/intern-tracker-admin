@@ -14,11 +14,13 @@
 </template>
 
 <script setup lang="ts">
+import type { Component } from 'vue'
+
 defineProps<{
   label: string
   value: number | string
   desc: string
-  icon: string
+  icon: Component
   iconClass: string
 }>()
 </script>

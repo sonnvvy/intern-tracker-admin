@@ -1,6 +1,13 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { deliverySeeds } from '@/api/mock'
+import {
+  JOB_STATUS,
+  canTransfer,
+  normalizeJobStatus,
+  statusFlowOrder,
+  statusLabelMap
+} from '@/utils/statusMachine'
 import type {
   DashboardStats,
   DeliveryItem,
@@ -17,19 +24,26 @@ function loadInitialData(): DeliveryItem[] {
   const source = cache ? JSON.parse(cache) : deliverySeeds
   return source.map((item: DeliveryItem) => ({
     ...item,
+    status: normalizeJobStatus(item.status),
     followUps: item.followUps || []
   }))
 }
 
 export const useDeliveryStore = defineStore('delivery', () => {
   const list = ref<DeliveryItem[]>(loadInitialData())
+  const interviewingStatuses: DeliveryStatus[] = [
+    JOB_STATUS.WRITTEN_TEST,
+    JOB_STATUS.FIRST_INTERVIEW,
+    JOB_STATUS.SECOND_INTERVIEW
+  ]
+  const offeredStatuses: DeliveryStatus[] = [JOB_STATUS.OFFER, JOB_STATUS.HIRED]
 
   const total = computed(() => list.value.length)
 
   const statusChartData = computed(() => {
-    const statusList: DeliveryStatus[] = ['已投递', '笔试中', '面试中', '已录用', '已拒绝']
+    const statusList: DeliveryStatus[] = statusFlowOrder
     return statusList.map((status) => ({
-      name: status,
+      name: statusLabelMap[status],
       value: list.value.filter((item) => item.status === status).length
     }))
   })
@@ -48,10 +62,13 @@ export const useDeliveryStore = defineStore('delivery', () => {
 
   const dashboardStats = computed<DashboardStats>(() => ({
     total: total.value,
-    interviewing: list.value.filter((item) => item.status === '面试中' || item.status === '笔试中').length,
-    offered: list.value.filter((item) => item.status === '已录用').length,
-    rejected: list.value.filter((item) => item.status === '已拒绝').length,
-    upcomingInterview: list.value.filter((item) => item.nextStep.includes('面试') || item.status === '面试中').length
+    interviewing: list.value.filter((item) => interviewingStatuses.includes(item.status)).length,
+    offered: list.value.filter((item) => offeredStatuses.includes(item.status)).length,
+    rejected: list.value.filter((item) => item.status === JOB_STATUS.REJECTED).length,
+    upcomingInterview: list.value.filter((item) =>
+      item.nextStep.includes('面试') ||
+      interviewingStatuses.includes(item.status)
+    ).length
   }))
 
   const highPriorityCount = computed(
@@ -63,8 +80,8 @@ export const useDeliveryStore = defineStore('delivery', () => {
     return list.value
       .map((item) => {
         let level: TodoItem['level'] = '常规'
-        if (item.priority === '高优先级' && (item.status === '面试中' || item.status === '笔试中')) level = '紧急'
-        else if (item.priority === '高优先级' || item.status === '面试中' || item.status === '笔试中') level = '优先'
+        if (item.priority === '高优先级' && interviewingStatuses.includes(item.status)) level = '紧急'
+        else if (item.priority === '高优先级' || interviewingStatuses.includes(item.status)) level = '优先'
         return {
           id: item.id,
           title: `${item.companyName} · ${item.jobTitle}`,
@@ -117,6 +134,29 @@ export const useDeliveryStore = defineStore('delivery', () => {
     persist()
   }
 
+  function transferDeliveryStatus(deliveryId: number, toStatus: DeliveryStatus) {
+    const target = list.value.find((item) => item.id === deliveryId)
+    if (!target) return { ok: false, message: '记录不存在' }
+
+    const fromStatus = target.status
+    if (!canTransfer(fromStatus, toStatus)) {
+      return {
+        ok: false,
+        message: `非法流转：${statusLabelMap[fromStatus]} 不能流转到 ${statusLabelMap[toStatus]}`
+      }
+    }
+
+    target.status = toStatus
+    target.followUps.unshift({
+      id: Date.now(),
+      date: new Date().toISOString().slice(0, 10),
+      action: `状态流转：${statusLabelMap[fromStatus]} -> ${statusLabelMap[toStatus]}`,
+      note: '系统自动记录状态变更'
+    })
+    persist()
+    return { ok: true, message: '状态更新成功' }
+  }
+
   function getPriorityTagType(priority: PriorityLevel) {
     const map: Record<PriorityLevel, 'danger' | 'warning' | 'success'> = {
       高优先级: 'danger',
@@ -138,6 +178,7 @@ export const useDeliveryStore = defineStore('delivery', () => {
     updateDelivery,
     removeDelivery,
     addFollowUp,
+    transferDeliveryStatus,
     getPriorityTagType
   }
 })
