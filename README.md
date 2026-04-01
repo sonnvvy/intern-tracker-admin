@@ -218,6 +218,29 @@ npm run start
 
 ## 8. 常见问题排查
 
+## 8.0 Vercel 部署（Vue Router history）
+
+如果前端部署在 Vercel 且使用 `createWebHistory`，请在前端根目录添加 `vercel.json`：
+
+```json
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+```
+
+前端调用 AI 接口时，建议通过环境变量配置后端地址，避免生产环境请求被前端 rewrite 规则拦截：
+
+```env
+# 本地开发可不填（默认使用 /ai，由 Vite 代理到 3001）
+# Vercel 生产环境建议设置为你的后端完整地址，例如：
+VITE_API_BASE_URL=https://your-backend-domain.com/ai
+```
+
 ## 8.1 前端无法调用 AI 接口
 
 - 确认后端已启动在 3001 端口
