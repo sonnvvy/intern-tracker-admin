@@ -24,6 +24,10 @@
           <el-icon><Document /></el-icon>
           <span>AI 简历解析</span>
         </el-menu-item>
+        <el-menu-item v-if="userStore.canAccessPerformancePage" index="/performance-long-list">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>长列表性能测试</span>
+        </el-menu-item>
       </el-menu>
     </aside>
 
@@ -57,6 +61,10 @@
           <el-icon><Document /></el-icon>
           <span>AI 简历解析</span>
         </el-menu-item>
+        <el-menu-item v-if="userStore.canAccessPerformancePage" index="/performance-long-list">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>长列表性能测试</span>
+        </el-menu-item>
       </el-menu>
     </el-drawer>
 
@@ -87,7 +95,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Audit } from '@icon-park/vue-next'
-import { Document, Expand, House, Memo, Menu, Tickets } from '@element-plus/icons-vue'
+import { DataAnalysis, Document, Expand, House, Memo, Menu, Tickets } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useUserStore } from '@/stores/user'

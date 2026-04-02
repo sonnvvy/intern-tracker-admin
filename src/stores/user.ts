@@ -5,6 +5,7 @@ import { getToken, setToken, removeToken } from '@/utils/auth'
 import { login as mockLogin } from '@/api/auth'
 
 const USER_KEY = 'intern-admin-user'
+const PERFORMANCE_TEST_USERS = ['admin']
 
 export const useUserStore = defineStore('user', () => {
   const token = ref<string>(getToken())
@@ -24,6 +25,10 @@ export const useUserStore = defineStore('user', () => {
   }
 
   const isLoggedIn = computed(() => Boolean(token.value))
+  const canAccessPerformancePage = computed(() => {
+    const username = userInfo.value.username ?? ''
+    return PERFORMANCE_TEST_USERS.includes(username)
+  })
 
   /**
    * 登录
@@ -84,6 +89,7 @@ export const useUserStore = defineStore('user', () => {
     token,
     userInfo,
     isLoggedIn,
+    canAccessPerformancePage,
     login,
     logout,
     clearToken,

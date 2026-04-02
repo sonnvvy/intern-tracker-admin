@@ -38,6 +38,12 @@ const router = createRouter({
           name: 'aiResume',
           component: () => import('@/views/ai-resume/index.vue'),
           meta: { title: 'AI 简历解析' }
+        },
+        {
+          path: 'performance-long-list',
+          name: 'performanceLongList',
+          component: () => import('@/views/performance/LongListPerformancePage.vue'),
+          meta: { title: '长列表性能测试' }
         }
       ]
     }
@@ -60,6 +66,12 @@ router.beforeEach((to, _from, next) => {
 
   // 如果已登录且访问登录页，则重定向到首页
   if (to.path === '/login' && userStore.isLoggedIn) {
+    next('/dashboard')
+    return
+  }
+
+  // 仅测试账号可访问性能测试页
+  if (to.path.startsWith('/performance-long-list') && !userStore.canAccessPerformancePage) {
     next('/dashboard')
     return
   }

@@ -66,8 +66,8 @@
 
         <div class="demo-tips">
           <p><el-icon><InfoFilled /></el-icon> 演示账号</p>
-          <p>用户名：<code>admin</code></p>
-          <p>密码：<code>123456</code></p>
+          <p>测试账号：<code>admin</code> / <code>123456</code>（可见性能测试页）</p>
+          <p>普通账号：<code>member</code> / <code>123456</code>（不展示性能测试页）</p>
         </div>
       </el-form>
     </div>
