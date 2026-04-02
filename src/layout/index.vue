@@ -38,12 +38,7 @@
       :with-header="false"
       class="mobile-menu-drawer"
     >
-      <div class="logo mobile-logo">
-        <span class="logo-mark">
-          <Audit theme="outline" :size="18" fill="currentColor" />
-        </span>
-        <span>求职进度台</span>
-      </div>
+      <div class="mobile-logo">求职进度台</div>
       <el-menu :default-active="activeMenu" class="menu mobile-menu" router @select="handleMenuSelect">
         <el-menu-item index="/dashboard">
           <el-icon><House /></el-icon>
@@ -199,11 +194,15 @@ onBeforeUnmount(() => {
 
 .mobile-logo {
   height: 56px;
-  justify-content: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #111827;
   border-bottom: 1px solid #eef2f7;
-  padding: 0 14px;
-  font-size: 16px;
+  padding: 0 16px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
 }
 
 .mobile-menu-btn {
