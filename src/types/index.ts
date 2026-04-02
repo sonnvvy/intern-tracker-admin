@@ -5,7 +5,10 @@ export type InterviewResult = '待开始' | '通过' | '未通过' | '待通知'
 export type PriorityLevel = '高优先级' | '正常跟进' | '保底机会'
 
 export interface UserInfo {
-  name: string
+  id?: string
+  name?: string
+  username?: string
+  nickname?: string
   role: string
 }
 

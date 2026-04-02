@@ -44,15 +44,37 @@ const router = createRouter({
   ]
 })
 
-router.beforeEach((to) => {
+// 白名单页面（无需登录可访问）
+const whiteList = ['/login']
+
+router.beforeEach((to, _from, next) => {
   const userStore = useUserStore()
-  if (to.path !== '/login' && !userStore.isLoggedIn) {
-    return '/login'
+
+  // 如果访问的是受保护的页面但未登录
+  if (!whiteList.includes(to.path) && !userStore.isLoggedIn) {
+    // 保存原本要访问的页面
+    sessionStorage.setItem('redirectFrom', to.path)
+    next('/login')
+    return
   }
+
+  // 如果已登录且访问登录页，则重定向到首页
   if (to.path === '/login' && userStore.isLoggedIn) {
-    return '/dashboard'
+    next('/dashboard')
+    return
   }
-  return true
+
+  next()
 })
+
+/**
+ * 获取登录后应该重定向到的页面
+ * 优先级：原本要访问的页面 > 首页
+ */
+export function getRedirectPath(): string {
+  const redirect = sessionStorage.getItem('redirectFrom')
+  sessionStorage.removeItem('redirectFrom')
+  return redirect || '/dashboard'
+}
 
 export default router

@@ -1,106 +1,331 @@
 <template>
-  <div class="login-page">
-    <div class="login-card">
-      <div class="title-wrap">
-        <h1>前端实习求职管理台</h1>
-        <p>用来整理岗位投递、面试安排和复盘记录的个人后台项目</p>
+  <div class="login-container">
+    <div class="login-form-wrapper">
+      <div class="login-header">
+        <h1 class="app-title">求职进度台</h1>
+        <p class="subtitle">前端求职追踪系统</p>
       </div>
 
-      <el-form ref="formRef" :model="form" :rules="rules" size="large">
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        class="login-form"
+        @keyup.enter="handleLogin"
+      >
         <el-form-item prop="username">
-          <el-input v-model="form.username" placeholder="请输入用户名">
-            <template #prefix><el-icon><User /></el-icon></template>
+          <el-input
+            v-model="form.username"
+            placeholder="用户名"
+            :disabled="loading"
+            clearable
+            size="large"
+          >
+            <template #prefix>
+              <el-icon><User /></el-icon>
+            </template>
           </el-input>
         </el-form-item>
-        <el-form-item prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password>
-            <template #prefix><el-icon><Lock /></el-icon></template>
-          </el-input>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" class="login-btn" @click="handleLogin">登录系统</el-button>
-        </el-form-item>
-      </el-form>
 
-      <div class="tips">演示模式：账号密码可任意填写，用于展示登录流程与状态管理</div>
+        <el-form-item prop="password">
+          <el-input
+            v-model="form.password"
+            :type="showPassword ? 'text' : 'password'"
+            placeholder="密码"
+            :disabled="loading"
+            clearable
+            size="large"
+            @update:model-value="clearError"
+          >
+            <template #prefix>
+              <el-icon><Lock /></el-icon>
+            </template>
+            <template #suffix>
+              <el-icon class="password-toggle" @click="showPassword = !showPassword">
+                <component :is="showPassword ? Hide : View" />
+              </el-icon>
+            </template>
+          </el-input>
+        </el-form-item>
+
+        <el-form-item v-if="error" class="error-message">
+          <el-alert :title="error" type="error" :closable="true" @close="error = ''" />
+        </el-form-item>
+
+        <el-form-item>
+          <el-button
+            type="primary"
+            size="large"
+            class="login-btn"
+            :loading="loading"
+            @click="handleLogin"
+          >
+            {{ loading ? '登录中...' : '登录' }}
+          </el-button>
+        </el-form-item>
+
+        <div class="demo-tips">
+          <p><el-icon><InfoFilled /></el-icon> 演示账号</p>
+          <p>用户名：<code>admin</code></p>
+          <p>密码：<code>123456</code></p>
+        </div>
+      </el-form>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { Lock, User } from '@element-plus/icons-vue'
+import { ElMessage, type FormInstance } from 'element-plus'
+import { User, Lock, View, Hide, InfoFilled } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-
-interface LoginForm {
-  username: string
-  password: string
-}
+import { getRedirectPath } from '@/router'
 
 const router = useRouter()
 const userStore = useUserStore()
 const formRef = ref<FormInstance>()
 
-const form = reactive<LoginForm>({
-  username: 'sonnvvy',
-  password: '123456'
+const form = reactive({
+  username: '',
+  password: ''
 })
 
-const rules: FormRules<LoginForm> = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+const rules = {
+  username: [
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+    { min: 3, message: '用户名至少 3 个字符', trigger: 'blur' }
+  ],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 6, message: '密码至少 6 个字符', trigger: 'blur' }
+  ]
 }
 
+const loading = ref(false)
+const error = ref('')
+const showPassword = ref(false)
+
+/**
+ * 清除错误提示
+ */
+function clearError() {
+  if (error.value) {
+    error.value = ''
+  }
+}
+
+/**
+ * 处理登录
+ */
 async function handleLogin() {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
-  userStore.login(form.username)
-  ElMessage.success('登录成功')
-  router.push('/dashboard')
+  if (!formRef.value) return
+
+  // 表单验证
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
+
+  loading.value = true
+  error.value = ''
+
+  try {
+    await userStore.login(form.username, form.password)
+
+    ElMessage.success('登录成功！')
+
+    // 获取重定向路径，登录后跳转
+    const redirect = getRedirectPath()
+    router.push(redirect)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '登录失败，请重试'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
 <style scoped lang="scss">
-.login-page {
+.login-container {
   min-height: 100vh;
   display: flex;
-  justify-content: center;
   align-items: center;
-  background: linear-gradient(135deg, #eff6ff 0%, #eef2ff 50%, #f5f3ff 100%);
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
 }
 
-.login-card {
-  width: 460px;
-  background: rgba(255, 255, 255, 0.94);
-  padding: 36px;
-  border-radius: 24px;
-  box-shadow: 0 20px 50px rgba(79, 70, 229, 0.15);
+.login-form-wrapper {
+  width: 100%;
+  max-width: 400px;
+  padding: 40px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  animation: slideUp 0.4s ease;
 }
 
-.title-wrap {
-  margin-bottom: 28px;
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
-  h1 {
-    margin: 0 0 10px;
-    font-size: 30px;
+.login-header {
+  text-align: center;
+  margin-bottom: 30px;
+
+  .app-title {
+    font-size: 28px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: #1f2937;
   }
 
-  p {
-    margin: 0;
+  .subtitle {
+    font-size: 14px;
     color: #6b7280;
-    line-height: 1.6;
+    margin: 0;
+  }
+}
+
+.login-form {
+  :deep(.el-form-item) {
+    margin-bottom: 20px;
+
+    &:last-of-type {
+      margin-bottom: 24px;
+    }
+  }
+
+  :deep(.el-input__wrapper) {
+    background-color: #f9fafb;
+    border-color: #e5e7eb;
+
+    &:hover {
+      background-color: #f3f4f6;
+      border-color: #d1d5db;
+    }
+
+    &.is-focus {
+      background-color: white;
+      border-color: #667eea;
+    }
+  }
+}
+
+.password-toggle {
+  cursor: pointer;
+  color: #9ca3af;
+  transition: color 0.2s;
+
+  &:hover {
+    color: #667eea;
+  }
+}
+
+.error-message {
+  margin-bottom: 16px;
+
+  :deep(.el-alert) {
+    padding: 8px 12px;
   }
 }
 
 .login-btn {
   width: 100%;
+  height: 40px;
+  font-size: 16px;
+  font-weight: 500;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  transition: all 0.3s ease;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+  }
+
+  &:disabled {
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  }
 }
 
-.tips {
-  margin-top: 8px;
+.demo-tips {
+  margin-top: 24px;
+  padding: 12px;
+  background: #f0f4ff;
+  border-radius: 6px;
+  border-left: 3px solid #667eea;
   font-size: 13px;
-  color: #909399;
+  color: #4b5563;
+  line-height: 1.6;
+
+  p {
+    margin: 0;
+
+    &:first-child {
+      font-weight: 500;
+      color: #667eea;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+  }
+
+  code {
+    background: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    color: #764ba2;
+  }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .login-container {
+    padding: 16px;
+  }
+
+  .login-form-wrapper {
+    max-width: 100%;
+    padding: 32px 20px;
+  }
+
+  .login-header {
+    .app-title {
+      font-size: 24px;
+    }
+  }
+}
+
+@media (max-width: 480px) {
+  .login-form-wrapper {
+    padding: 24px 16px;
+  }
+
+  .login-header {
+    margin-bottom: 24px;
+
+    .app-title {
+      font-size: 20px;
+    }
+
+    .subtitle {
+      font-size: 12px;
+    }
+  }
+
+  .demo-tips {
+    font-size: 12px;
+  }
 }
 </style>

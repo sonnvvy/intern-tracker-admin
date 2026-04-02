@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type { ChatAssistantResult, JobAdviceResult, ResumeAnalysisResult } from '@/types'
+import { getToken } from '@/utils/auth'
 
 function normalizeBaseUrl(baseUrl: string | undefined): string {
   if (!baseUrl || !baseUrl.trim()) {
@@ -15,6 +16,52 @@ const apiClient = axios.create({
 const vercelAiClient = axios.create({
   baseURL: '/api'
 })
+
+/**
+ * 为 axios 实例添加请求和响应拦截器
+ */
+function setupInterceptors(instance: typeof apiClient | typeof vercelAiClient) {
+  // 请求拦截器：自动附加 token
+  instance.interceptors.request.use(
+    config => {
+      const token = getToken()
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+      }
+      return config
+    },
+    error => {
+      return Promise.reject(error)
+    }
+  )
+
+  // 响应拦截器：处理 401 未授权
+  instance.interceptors.response.use(
+    response => response,
+    async error => {
+      if (error.response?.status === 401) {
+        // 动态导入以避免循环依赖
+        const { useUserStore } = await import('@/stores/user')
+        const { useRouter } = await import('vue-router')
+
+        const userStore = useUserStore()
+        const router = useRouter()
+
+        // 清空登录状态
+        userStore.clearToken()
+
+        // 跳转到登录页
+        router.push('/login')
+      }
+
+      return Promise.reject(error)
+    }
+  )
+}
+
+// 为两个实例设置拦截器
+setupInterceptors(apiClient)
+setupInterceptors(vercelAiClient)
 
 interface ApiEnvelope<T> {
   data: T
