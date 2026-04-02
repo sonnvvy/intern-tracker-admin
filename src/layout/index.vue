@@ -34,7 +34,7 @@
     <el-drawer
       v-model="mobileMenuVisible"
       direction="ltr"
-      size="220px"
+      :size="mobileDrawerSize"
       :with-header="false"
       class="mobile-menu-drawer"
     >
@@ -109,9 +109,12 @@ const userStore = useUserStore()
 const activeMenu = computed(() => route.path)
 const isMobile = ref(false)
 const mobileMenuVisible = ref(false)
+const mobileDrawerSize = ref('220px')
 
 const handleResize = throttle(() => {
-  isMobile.value = window.innerWidth < 768
+  const width = window.innerWidth
+  isMobile.value = width < 768
+  mobileDrawerSize.value = `${Math.min(300, Math.max(248, Math.round(width * 0.82)))}px`
   if (!isMobile.value) {
     mobileMenuVisible.value = false
   }
@@ -195,10 +198,12 @@ onBeforeUnmount(() => {
 }
 
 .mobile-logo {
+  height: 56px;
   justify-content: flex-start;
   color: #111827;
   border-bottom: 1px solid #eef2f7;
-  padding: 0 8px;
+  padding: 0 14px;
+  font-size: 16px;
 }
 
 .mobile-menu-btn {
@@ -207,14 +212,32 @@ onBeforeUnmount(() => {
 
 :deep(.mobile-menu-drawer .el-drawer__body) {
   padding: 0;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 :deep(.mobile-menu) {
   border-right: none;
+  padding: 8px;
 }
 
 :deep(.mobile-menu .el-menu-item) {
+  min-height: 50px;
+  margin: 6px 0;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
   color: #1f2937;
+}
+
+:deep(.mobile-menu .el-menu-item .el-icon) {
+  font-size: 18px;
+}
+
+:deep(.mobile-menu .el-menu-item span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 :deep(.mobile-menu .el-menu-item.is-active) {
