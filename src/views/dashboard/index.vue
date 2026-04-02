@@ -203,6 +203,7 @@ const handleResize = throttle(() => {
 watch(
   () => [deliveryStore.list.length, interviewStore.list.length],
   async () => {
+    if (chartLoading.value) return
     await nextTick()
     await renderStatusChart()
     await renderTrendChart()
@@ -211,10 +212,10 @@ watch(
 )
 
 onMounted(async () => {
+  chartLoading.value = false
   await nextTick()
   await renderStatusChart()
   await renderTrendChart()
-  chartLoading.value = false
   // 列表骨架只在首屏短暂显示，减少“白屏感”。
   window.setTimeout(() => {
     listLoading.value = false
