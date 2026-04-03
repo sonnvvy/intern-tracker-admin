@@ -23,6 +23,7 @@ export async function invokeJsonWithSchema<T>(params: {
   model: ChatOpenAI
   input: Record<string, string>
   schema: ZodType<T>
+  normalize?: (value: unknown) => T
 }): Promise<T> {
   const chain = params.prompt.pipe(params.model).pipe(new StringOutputParser())
   const rawText = await chain.invoke(params.input)
@@ -36,9 +37,13 @@ export async function invokeJsonWithSchema<T>(params: {
   }
 
   const validated = params.schema.safeParse(parsed)
-  if (!validated.success) {
-    throw new Error('Model JSON format is invalid')
+  if (validated.success) {
+    return validated.data
   }
 
-  return validated.data
+  if (params.normalize) {
+    return params.normalize(parsed)
+  }
+
+  throw new Error('Model JSON format is invalid')
 }

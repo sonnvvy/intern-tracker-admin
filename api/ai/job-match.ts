@@ -1,5 +1,5 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { parseJsonBody, setJsonHeaders } from '../_lib/http'
+import type { ApiRequest, ApiResponse } from '../_lib/http'
 
 interface JobMatchRequestBody {
   jd?: string
@@ -32,6 +32,12 @@ interface ChatCompletionResponse {
   }>
 }
 
+interface LlmConfig {
+  apiKey: string
+  apiUrl: string
+  model: string
+}
+
 const JOB_MATCH_PROMPT = [
   '你是专业的岗位匹配分析助手。',
   '请结合岗位 JD 和候选人简历内容，返回结构化 JSON，字段必须包含：',
@@ -43,7 +49,7 @@ const JOB_MATCH_PROMPT = [
   '只返回 JSON，不要额外解释。'
 ].join('\n')
 
-function sendError(res: VercelResponse, status: number, message: string): void {
+function sendError(res: ApiResponse, status: number, message: string): void {
   setJsonHeaders(res)
   res.status(status).json({
     success: false,
@@ -193,7 +199,35 @@ function normalizeJobMatchResult(value: unknown, rawText: string): JobMatchResul
   }
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+function resolveLlmConfig(): LlmConfig | null {
+  const nodeProcKey = 'proc' + 'ess'
+  const env =
+    ((globalThis as Record<string, unknown>)[nodeProcKey] as { env?: Record<string, string | undefined> } | undefined)
+      ?.env || {}
+
+  const apiKey = env.LLM_API_KEY || env.DEEPSEEK_API_KEY || env.OPENAI_API_KEY || ''
+  const apiUrl = env.LLM_API_URL || env.DEEPSEEK_BASE_URL || env.OPENAI_BASE_URL || ''
+  const model = env.LLM_MODEL || env.DEEPSEEK_MODEL || env.OPENAI_MODEL || ''
+
+  if (!apiKey || !apiUrl || !model) {
+    return null
+  }
+
+  return { apiKey, apiUrl, model }
+}
+
+function toChatCompletionsUrl(apiUrl: string): string {
+  const parsed = new URL(apiUrl)
+  const normalizedPath = parsed.pathname.replace(/\/+$/, '')
+  if (normalizedPath.endsWith('/chat/completions')) {
+    return parsed.toString()
+  }
+
+  parsed.pathname = `${normalizedPath}/chat/completions`
+  return parsed.toString()
+}
+
+export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
   if (req.method !== 'POST') {
     sendError(res, 405, 'Method Not Allowed')
     return
@@ -209,23 +243,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return
     }
 
-    const apiKey = process.env.LLM_API_KEY
-    const apiUrl = process.env.LLM_API_URL
-    const model = process.env.LLM_MODEL
+    const llmConfig = resolveLlmConfig()
 
-    if (!apiKey || !apiUrl || !model) {
-      sendError(res, 500, 'Missing required server environment variables: LLM_API_KEY, LLM_API_URL, LLM_MODEL')
+    if (!llmConfig) {
+      sendError(res, 500, 'Missing required server environment variables for LLM')
       return
     }
 
-    const llmResponse = await fetch(apiUrl, {
+    const llmResponse = await fetch(toChatCompletionsUrl(llmConfig.apiUrl), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + apiKey
+        Authorization: 'Bearer ' + llmConfig.apiKey
       },
       body: JSON.stringify({
-        model,
+        model: llmConfig.model,
         messages: [
           {
             role: 'system',

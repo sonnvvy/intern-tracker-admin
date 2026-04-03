@@ -24,6 +24,69 @@ const resumeAnalysisSchema = z.object({
   advice: z.array(z.string()).default([])
 })
 
+function normalizeString(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.trim()
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  if (Array.isArray(value)) {
+    const firstText = value.find((item): item is string => typeof item === 'string' && item.trim())
+    return firstText?.trim() || ''
+  }
+
+  return ''
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item.trim()
+        }
+
+        if (item && typeof item === 'object' && 'text' in item && typeof (item as { text?: unknown }).text === 'string') {
+          return (item as { text: string }).text.trim()
+        }
+
+        if (typeof item === 'number' || typeof item === 'boolean') {
+          return String(item).trim()
+        }
+
+        return ''
+      })
+      .filter((item) => item.length > 0)
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(/[\n,，;；、]+/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+  }
+
+  return []
+}
+
+function normalizeResumeAnalysisResult(value: unknown) {
+  const source = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+
+  return {
+    name: normalizeString(source.name),
+    education: normalizeString(source.education),
+    major: normalizeString(source.major),
+    skills: normalizeStringArray(source.skills),
+    projects: normalizeStringArray(source.projects),
+    internships: normalizeStringArray(source.internships),
+    jobDirections: normalizeStringArray(source.jobDirections),
+    advice: normalizeStringArray(source.advice)
+  }
+}
+
 const resumeAnalysisPrompt = ChatPromptTemplate.fromMessages([
   [
     'system',
@@ -108,7 +171,8 @@ const server = createServer(async (req, res) => {
         prompt: resumeAnalysisPrompt,
         model,
         input: { resumeText },
-        schema: resumeAnalysisSchema
+        schema: resumeAnalysisSchema,
+        normalize: normalizeResumeAnalysisResult
       })
 
       sendJson(res, 200, {

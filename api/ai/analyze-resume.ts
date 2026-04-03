@@ -1,5 +1,5 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { parseJsonBody, setJsonHeaders } from '../_lib/http'
+import type { ApiRequest, ApiResponse } from '../_lib/http'
 
 interface AnalyzeResumeRequestBody {
   resumeText?: string
@@ -23,6 +23,12 @@ interface ChatCompletionResponse {
   }>
 }
 
+interface LlmConfig {
+  apiKey: string
+  apiUrl: string
+  model: string
+}
+
 const ANALYZE_PROMPT =
   '你是专业的简历分析助手，请提取技能、项目亮点、优势、待优化点，并尽量返回结构化 JSON'
 
@@ -39,7 +45,7 @@ function logError(message: string, extra?: Record<string, unknown>): void {
   console.error('[api/ai/analyze-resume] ' + message, extra || {})
 }
 
-function sendError(res: VercelResponse, status: number, message: string): void {
+function sendError(res: ApiResponse, status: number, message: string): void {
   setJsonHeaders(res)
   res.status(status).json({
     success: false,
@@ -156,7 +162,35 @@ function normalizeMessageContent(content: unknown): string {
   return JSON.stringify(content ?? '')
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+function resolveLlmConfig(): LlmConfig | null {
+  const nodeProcKey = 'proc' + 'ess'
+  const env =
+    ((globalThis as Record<string, unknown>)[nodeProcKey] as { env?: Record<string, string | undefined> } | undefined)
+      ?.env || {}
+
+  const apiKey = env.LLM_API_KEY || env.DEEPSEEK_API_KEY || env.OPENAI_API_KEY || ''
+  const apiUrl = env.LLM_API_URL || env.DEEPSEEK_BASE_URL || env.OPENAI_BASE_URL || ''
+  const model = env.LLM_MODEL || env.DEEPSEEK_MODEL || env.OPENAI_MODEL || ''
+
+  if (!apiKey || !apiUrl || !model) {
+    return null
+  }
+
+  return { apiKey, apiUrl, model }
+}
+
+function toChatCompletionsUrl(apiUrl: string): string {
+  const parsed = new URL(apiUrl)
+  const normalizedPath = parsed.pathname.replace(/\/+$/, '')
+  if (normalizedPath.endsWith('/chat/completions')) {
+    return parsed.toString()
+  }
+
+  parsed.pathname = `${normalizedPath}/chat/completions`
+  return parsed.toString()
+}
+
+export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
   if (req.method !== 'POST') {
     sendError(res, 405, 'Method Not Allowed')
     return
@@ -182,25 +216,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return
     }
 
-    const apiKey = process.env.LLM_API_KEY
-    const apiUrl = process.env.LLM_API_URL
-    const model = process.env.LLM_MODEL
+    const llmConfig = resolveLlmConfig()
 
     logInfo('request received', {
-      hasApiKey: Boolean(apiKey),
-      hasApiUrl: Boolean(apiUrl),
-      hasModel: Boolean(model),
+      hasApiKey: Boolean(llmConfig?.apiKey),
+      hasApiUrl: Boolean(llmConfig?.apiUrl),
+      hasModel: Boolean(llmConfig?.model),
       resumeTextLength: resumeText.length
     })
 
-    if (!apiKey || !apiUrl || !model) {
+    if (!llmConfig) {
       sendError(res, 500, 'Server configuration error')
       return
     }
 
     let validatedApiUrl: string
     try {
-      validatedApiUrl = new URL(apiUrl).toString()
+      validatedApiUrl = toChatCompletionsUrl(llmConfig.apiUrl)
     } catch {
       sendError(res, 500, 'Server configuration error')
       return
@@ -217,10 +249,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + apiKey
+          Authorization: 'Bearer ' + llmConfig.apiKey
         },
         body: JSON.stringify({
-          model,
+          model: llmConfig.model,
           messages: [
             {
               role: 'system',
