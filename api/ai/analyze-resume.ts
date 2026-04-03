@@ -195,7 +195,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     return
   }
 
-  if (req.method !== 'POST') {
+  const method = String(req.method || '').toUpperCase()
+  if (method !== 'POST') {
     sendError(res, 405, 'Method Not Allowed')
     return
   }
