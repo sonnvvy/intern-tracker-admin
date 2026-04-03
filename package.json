@@ -38,7 +38,6 @@
     "typescript": "~5.7.2",
     "unplugin-auto-import": "^21.0.0",
     "unplugin-vue-components": "^32.0.0",
-    "vercel": "^50.38.1",
     "vite": "^6.2.0",
     "vue-tsc": "^2.2.4"
   }
