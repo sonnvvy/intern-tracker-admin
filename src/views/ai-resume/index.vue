@@ -12,7 +12,7 @@
         drag
         :auto-upload="false"
         :limit="1"
-        accept=".pdf,.doc,.docx"
+        accept=".pdf,.docx"
         :show-file-list="false"
         :on-change="handleFileChange"
         :on-exceed="handleExceed"
@@ -20,7 +20,7 @@
         <el-icon class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">点击或拖拽上传简历文件</div>
         <template #tip>
-          <div class="el-upload__tip">支持 PDF、DOC、DOCX 格式，单个文件不超过 10MB</div>
+          <div class="el-upload__tip">支持 PDF、DOCX 格式，单个文件不超过 10MB</div>
         </template>
       </el-upload>
 
@@ -131,6 +131,8 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { UploadFilled } from '@element-plus/icons-vue'
 import type { UploadFile, UploadFiles, UploadInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
+import * as pdfjsLib from 'pdfjs-dist'
+import mammoth from 'mammoth/mammoth.browser'
 import { analyzeResume } from '@/api/ai'
 import type { ResumeAnalysisResult } from '@/types'
 import AIAssistant from './components/AIAssistant.vue'
@@ -141,7 +143,7 @@ interface ProgressStep {
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
-const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx']
+const ALLOWED_EXTENSIONS = ['pdf', 'docx']
 
 const uploadRef = ref<UploadInstance>()
 const selectedFile = ref<File | null>(null)
@@ -166,9 +168,77 @@ const currentStatusDescription = computed(
 )
 const defaultErrorText = '解析失败：请检查文件清晰度或网络状态后重试。扫描版 PDF 建议上传更清晰版本。'
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
+
 function getExtension(name: string): string {
   const parts = name.split('.')
   return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function normalizeResult(payload: any): ResumeAnalysisResult {
+  return {
+    name: typeof payload?.name === 'string' ? payload.name.trim() : '',
+    education: typeof payload?.education === 'string' ? payload.education.trim() : '',
+    major: typeof payload?.major === 'string' ? payload.major.trim() : '',
+    skills: toStringArray(payload?.skills),
+    projects: toStringArray(payload?.projects),
+    internships: toStringArray(payload?.internships),
+    jobDirections: toStringArray(payload?.jobDirections),
+    advice: toStringArray(payload?.advice)
+  }
+}
+
+async function extractTextFromPdf(file: File): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer()
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+  const pdf = await loadingTask.promise
+
+  const pageTexts: string[] = []
+  for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
+    const page = await pdf.getPage(pageNo)
+    const textContent = await page.getTextContent()
+    const text = textContent.items
+      .map((item) => ('str' in item ? (item as { str: string }).str : ''))
+      .join(' ')
+      .trim()
+
+    if (text) {
+      pageTexts.push(text)
+    }
+  }
+
+  return pageTexts.join('\n').trim()
+}
+
+async function extractTextFromDocx(file: File): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer()
+  const { value } = await mammoth.extractRawText({ arrayBuffer })
+  return value.trim()
+}
+
+async function extractResumeText(file: File): Promise<string> {
+  const extension = getExtension(file.name)
+
+  if (extension === 'pdf') {
+    return extractTextFromPdf(file)
+  }
+
+  if (extension === 'docx') {
+    return extractTextFromDocx(file)
+  }
+
+  throw new Error('文件格式不支持：仅支持 PDF、DOCX')
 }
 
 function clearState() {
@@ -210,7 +280,7 @@ function handleFileChange(uploadFile: UploadFile, uploadFiles: UploadFiles) {
   const isAllowedSize = rawFile.size <= MAX_FILE_SIZE
 
   if (!isAllowedType) {
-    ElMessage.error('仅支持 PDF、DOC、DOCX 格式文件')
+    ElMessage.error('仅支持 PDF、DOCX 格式文件')
     uploadRef.value?.clearFiles()
     selectedFile.value = null
     return
@@ -257,8 +327,13 @@ async function startAnalyze() {
   startProgress()
 
   try {
-    const parsed = await analyzeResume(selectedFile.value)
-    result.value = parsed
+    const resumeText = await extractResumeText(selectedFile.value)
+    if (!resumeText) {
+      throw new Error('文件解析失败：未提取到有效文本，请上传可复制文本的文件')
+    }
+
+    const parsed = await analyzeResume(resumeText)
+    result.value = normalizeResult(parsed)
     isSuccess.value = true
     activeStep.value = progressSteps.length - 1
   } catch (error) {

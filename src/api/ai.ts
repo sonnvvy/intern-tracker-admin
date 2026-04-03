@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ChatAssistantResult, JobAdviceResult, ResumeAnalysisResult } from '@/types'
+import type { ChatAssistantResult, JobAdviceResult } from '@/types'
 import { getToken } from '@/utils/auth'
 
 function normalizeBaseUrl(baseUrl: string | undefined): string {
@@ -64,7 +64,9 @@ setupInterceptors(apiClient)
 setupInterceptors(vercelAiClient)
 
 interface ApiEnvelope<T> {
-  data: T
+  success: boolean
+  data?: T
+  message?: string
 }
 
 function extractErrorMessage(error: unknown, fallback: string): string {
@@ -84,31 +86,63 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-export async function analyzeResume(file: File): Promise<ResumeAnalysisResult> {
-  const formData = new FormData()
-  formData.append('file', file)
+export async function analyzeResume(resumeText: string): Promise<any> {
+  const text = resumeText.trim()
+  if (!text) {
+    throw new Error('简历文本不能为空')
+  }
 
-  let data: ResumeAnalysisResult
   try {
-    const response = await apiClient.post<ResumeAnalysisResult>('/resume/analyze', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
+    const response = await vercelAiClient.post<ApiEnvelope<any>>('/ai/analyze-resume', {
+      resumeText: text
     })
-    data = response.data
+
+    if (!response.data?.success || !response.data.data) {
+      throw new Error(response.data?.message || '简历分析失败，请稍后重试')
+    }
+
+    return response.data.data
   } catch (error) {
     throw new Error(extractErrorMessage(error, '简历解析请求失败，请稍后重试'))
   }
-
-  return data
 }
 
 export async function askInterviewQuestion(question: string): Promise<ChatAssistantResult> {
-  const { data } = await vercelAiClient.post<ApiEnvelope<ChatAssistantResult>>('/chat', { question })
-  return data.data
+  const q = question.trim()
+  if (!q) {
+    throw new Error('问题不能为空')
+  }
+
+  try {
+    const { data } = await vercelAiClient.post<ApiEnvelope<ChatAssistantResult>>('/ai/interview-chat', { question: q })
+    if (!data?.success || !data.data) {
+      throw new Error(data?.message || '面试问答请求失败，请稍后重试')
+    }
+    return data.data
+  } catch (error) {
+    throw new Error(extractErrorMessage(error, '面试问答请求失败，请稍后重试'))
+  }
 }
 
 export async function analyzeJobMatch(payload: { jd: string; resumeText: string }): Promise<JobAdviceResult> {
-  const { data } = await vercelAiClient.post<ApiEnvelope<JobAdviceResult>>('/job-advice', payload)
-  return data.data
+  const jd = payload.jd.trim()
+  const resumeText = payload.resumeText.trim()
+  if (!jd || !resumeText) {
+    throw new Error('jd 和 resumeText 不能为空')
+  }
+
+  try {
+    const { data } = await vercelAiClient.post<ApiEnvelope<JobAdviceResult>>('/ai/job-match', {
+      jd,
+      resumeText
+    })
+
+    if (!data?.success || !data.data) {
+      throw new Error(data?.message || '岗位匹配分析失败，请稍后重试')
+    }
+
+    return data.data
+  } catch (error) {
+    throw new Error(extractErrorMessage(error, '岗位匹配分析失败，请稍后重试'))
+  }
 }
