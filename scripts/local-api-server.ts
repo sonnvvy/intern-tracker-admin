@@ -33,23 +33,33 @@ function normalizeString(value: unknown): string {
     return String(value)
   }
 
-  if (Array.isArray(value)) {
-    const firstText = value.find((item): item is string => typeof item === 'string' && item.trim())
-    return firstText?.trim() || ''
+  if (Object.prototype.toString.call(value) === '[object Array]') {
+    const list = value as unknown[]
+    const firstText = list
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .find((item) => item.length > 0)
+
+    return firstText ?? ''
   }
 
   return ''
 }
 
 function normalizeStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
+  if (Object.prototype.toString.call(value) === '[object Array]') {
+    const list = value as unknown[]
+    return list
       .map((item) => {
         if (typeof item === 'string') {
           return item.trim()
         }
 
-        if (item && typeof item === 'object' && 'text' in item && typeof (item as { text?: unknown }).text === 'string') {
+        if (
+          item !== null &&
+          typeof item === 'object' &&
+          'text' in item &&
+          typeof (item as { text?: unknown }).text === 'string'
+        ) {
           return (item as { text: string }).text.trim()
         }
 
@@ -64,7 +74,7 @@ function normalizeStringArray(value: unknown): string[] {
 
   if (typeof value === 'string') {
     return value
-      .split(/[\n,，;；、]+/)
+      .split(/[\n,;]+/)
       .map((item) => item.trim())
       .filter((item) => item.length > 0)
   }
@@ -73,7 +83,7 @@ function normalizeStringArray(value: unknown): string[] {
 }
 
 function normalizeResumeAnalysisResult(value: unknown) {
-  const source = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const source = value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 
   return {
     name: normalizeString(source.name),
