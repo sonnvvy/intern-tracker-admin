@@ -1,38 +1,27 @@
 <template>
   <div class="page-shell delivery-page">
-    <div class="page-card summary-card">
-      <div>
-        <h2 class="page-title">岗位投递</h2>
-        <div class="sub-title">管理目标岗位、优先级和下一步动作，并通过跟进记录把状态流转串起来</div>
-      </div>
-      <div class="header-actions">
-        <el-button plain @click="openExportDialog">导出 Excel</el-button>
-        <el-button type="primary" @click="openCreateDialog">新增记录</el-button>
-      </div>
-    </div>
+    <PageHeaderBar
+      class="summary-card"
+      title="岗位投递"
+      subtitle="管理目标岗位、优先级和下一步动作，并通过跟进记录把状态流转串起来"
+    >
+      <template #actions>
+        <div class="header-actions">
+          <el-button plain @click="openExportDialog">导出 Excel</el-button>
+          <el-button type="primary" @click="openCreateDialog">新增记录</el-button>
+        </div>
+      </template>
+    </PageHeaderBar>
 
     <div class="content-grid layout-fixed">
       <div class="page-card main-card">
-        <div class="filter-bar compact-filter">
-        <el-input
-          v-model="globalSearchInput"
-          class="filter-item"
-          placeholder="全局搜索：公司名 / 岗位名 / 城市"
-          clearable
-          style="width: 260px"
-          @keyup.enter="handleSearchNow"
+        <SearchFilterBar
+          wrapper-class="compact-filter"
+          :fields="deliveryFilterFields"
+          @field-change="handleFilterFieldChange"
+          @search="handleSearchNow"
+          @reset="resetFilter"
         />
-        <el-select v-model="status" class="filter-item" placeholder="筛选状态" clearable style="width: 136px">
-          <el-option v-for="item in statusOptions" :key="item" :label="statusLabelMap[item]" :value="item" />
-        </el-select>
-        <el-select v-model="priority" class="filter-item" placeholder="筛选优先级" clearable style="width: 136px">
-          <el-option v-for="item in priorityOptions" :key="item" :label="item" :value="item" />
-        </el-select>
-        <div class="filter-action-row">
-          <el-button type="primary" plain @click="handleSearchNow">查询</el-button>
-          <el-button @click="resetFilter">重置</el-button>
-        </div>
-      </div>
 
       <div v-if="tableLoading" class="empty-state">
         <el-skeleton animated :rows="6" />
@@ -100,7 +89,7 @@
       </div>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑投递记录' : '新增投递记录'" :width="dialogWidth">
+    <CrudDialogForm v-model="dialogVisible" :title="isEdit ? '编辑投递记录' : '新增投递记录'" :width="dialogWidth" @confirm="submitForm">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="92px">
         <el-form-item label="目标公司" prop="companyName">
           <el-input v-model="form.companyName" placeholder="例如：青禾数据" maxlength="20" show-word-limit />
@@ -131,11 +120,7 @@
           <el-input v-model="form.remark" type="textarea" :rows="3" maxlength="100" show-word-limit placeholder="记录这个岗位的补充信息" />
         </el-form-item>
       </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitForm">确定</el-button>
-      </template>
-    </el-dialog>
+    </CrudDialogForm>
 
     <el-drawer v-model="drawerVisible" title="投递详情" size="520px">
       <div v-if="currentRow" class="detail-shell">
@@ -174,7 +159,7 @@
       </div>
     </el-drawer>
 
-    <el-dialog v-model="followDialogVisible" title="新增跟进记录" :width="dialogWidth">
+    <CrudDialogForm v-model="followDialogVisible" title="新增跟进记录" :width="dialogWidth" @confirm="submitFollowUp">
       <el-form ref="followFormRef" :model="followForm" :rules="followRules" label-width="92px">
         <el-form-item label="记录日期" prop="date">
           <el-input v-model="followForm.date" placeholder="例如：2026-03-10" />
@@ -186,11 +171,7 @@
           <el-input v-model="followForm.note" type="textarea" :rows="3" maxlength="80" show-word-limit placeholder="记录这次状态变化或下一步计划" />
         </el-form-item>
       </el-form>
-      <template #footer>
-        <el-button @click="followDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitFollowUp">确定</el-button>
-      </template>
-    </el-dialog>
+    </CrudDialogForm>
 
     <el-dialog v-model="statusDialogVisible" title="修改状态" :width="dialogWidth">
       <el-form label-width="92px">
@@ -226,6 +207,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import CrudDialogForm from '@/components/common/CrudDialogForm.vue'
+import PageHeaderBar from '@/components/common/PageHeaderBar.vue'
+import SearchFilterBar from '@/components/common/SearchFilterBar.vue'
 import { useAppStore } from '@/stores/app'
 import { useDeliveryStore } from '@/stores/delivery'
 import { debounce, throttle } from '@/utils/performance'
@@ -300,6 +284,32 @@ const dialogWidth = computed(() => (isMobileView.value ? 'calc(100vw - 32px)' : 
 
 const statusOptions: DeliveryStatus[] = statusFlowOrder
 const priorityOptions: PriorityLevel[] = ['高优先级', '正常跟进', '保底机会']
+
+const deliveryFilterFields = computed(() => [
+  {
+    key: 'globalSearchInput',
+    type: 'input' as const,
+    modelValue: globalSearchInput.value,
+    placeholder: '全局搜索：公司名 / 岗位名 / 城市',
+    width: 260
+  },
+  {
+    key: 'status',
+    type: 'select' as const,
+    modelValue: status.value,
+    placeholder: '筛选状态',
+    width: 136,
+    options: statusOptions.map((item) => ({ label: statusLabelMap[item], value: item }))
+  },
+  {
+    key: 'priority',
+    type: 'select' as const,
+    modelValue: priority.value,
+    placeholder: '筛选优先级',
+    width: 136,
+    options: priorityOptions.map((item) => ({ label: item, value: item }))
+  }
+])
 
 const nextStatusOptions = computed<DeliveryStatus[]>(() => {
   if (!statusRow.value) return []
@@ -415,6 +425,22 @@ function resetFilter() {
 function handleSearchNow() {
   globalSearchKeyword.value = globalSearchInput.value.trim().toLowerCase()
   page.value = 1
+}
+
+function handleFilterFieldChange(payload: { key: string; value: string | number | boolean | null | undefined }) {
+  if (payload.key === 'globalSearchInput') {
+    globalSearchInput.value = String(payload.value ?? '')
+    return
+  }
+
+  if (payload.key === 'status') {
+    status.value = (payload.value as DeliveryStatus | '') || ''
+    return
+  }
+
+  if (payload.key === 'priority') {
+    priority.value = (payload.value as PriorityLevel | '') || ''
+  }
 }
 
 function resetForm() {

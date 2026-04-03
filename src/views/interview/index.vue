@@ -1,21 +1,27 @@
 <template>
   <div class="page-shell interview-page">
-    <div class="page-card summary-card">
-      <div>
-        <h2 class="page-title">面试复盘</h2>
-        <div class="sub-title">把每次面试提到的知识点和答题情况记下来，后面查漏补缺会更快</div>
-      </div>
-      <el-button type="primary" plain @click="dialogVisible = true">新增复盘</el-button>
-    </div>
+    <PageHeaderBar
+      class="summary-card"
+      title="面试复盘"
+      subtitle="把每次面试提到的知识点和答题情况记下来，后面查漏补缺会更快"
+    >
+      <template #actions>
+        <el-button type="primary" plain @click="dialogVisible = true">新增复盘</el-button>
+      </template>
+    </PageHeaderBar>
 
     <div class="page-card filter-card">
-      <div class="filter-bar no-margin">
-        <el-input v-model="keyword" placeholder="搜索公司、岗位或知识点" clearable style="width: 240px" />
-        <el-select v-model="result" placeholder="筛选结果" clearable style="width: 150px">
-          <el-option v-for="item in resultOptions" :key="item" :label="item" :value="item" />
-        </el-select>
-        <StatusTag text="待跟进" mode="interview">待跟进 {{ interviewStore.upcomingCount }}</StatusTag>
-      </div>
+      <SearchFilterBar
+        wrapper-class="no-margin"
+        :fields="interviewFilterFields"
+        :show-search-button="false"
+        :show-reset-button="false"
+        @field-change="handleFilterFieldChange"
+      >
+        <template #actions>
+          <StatusTag text="待跟进" mode="interview">待跟进 {{ interviewStore.upcomingCount }}</StatusTag>
+        </template>
+      </SearchFilterBar>
     </div>
 
     <div class="content-grid">
@@ -52,7 +58,7 @@
       </div>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="新增面试复盘" width="560px">
+    <CrudDialogForm v-model="dialogVisible" title="新增面试复盘" width="560px" @confirm="submitForm">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="92px">
         <el-form-item label="目标公司" prop="companyName"><el-input v-model="form.companyName" /></el-form-item>
         <el-form-item label="岗位名称" prop="jobTitle"><el-input v-model="form.jobTitle" /></el-form-item>
@@ -72,17 +78,16 @@
           <el-input v-model="form.summary" type="textarea" :rows="4" placeholder="记录本次面试过程、问题和后续要补的内容" />
         </el-form-item>
       </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitForm">确定</el-button>
-      </template>
-    </el-dialog>
+    </CrudDialogForm>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import CrudDialogForm from '@/components/common/CrudDialogForm.vue'
+import PageHeaderBar from '@/components/common/PageHeaderBar.vue'
+import SearchFilterBar from '@/components/common/SearchFilterBar.vue'
 import { useInterviewStore } from '@/stores/interview'
 import StatusTag from '@/components/StatusTag.vue'
 import type { InterviewItem, InterviewResult } from '@/types'
@@ -93,6 +98,24 @@ const result = ref<InterviewResult | ''>('')
 const dialogVisible = ref(false)
 const formRef = ref<FormInstance>()
 const resultOptions: InterviewResult[] = ['待开始', '通过', '未通过', '待通知']
+
+const interviewFilterFields = computed(() => [
+  {
+    key: 'keyword',
+    type: 'input' as const,
+    modelValue: keyword.value,
+    placeholder: '搜索公司、岗位或知识点',
+    width: 240
+  },
+  {
+    key: 'result',
+    type: 'select' as const,
+    modelValue: result.value,
+    placeholder: '筛选结果',
+    width: 150,
+    options: resultOptions.map((item) => ({ label: item, value: item }))
+  }
+])
 
 const form = reactive<Omit<InterviewItem, 'id'>>({
   companyName: '',
@@ -127,6 +150,17 @@ const filteredList = computed(() => {
 })
 
 const allTagOptions = computed(() => [...new Set(interviewStore.list.flatMap((item) => item.questionTags))])
+
+function handleFilterFieldChange(payload: { key: string; value: string | number | boolean | null | undefined }) {
+  if (payload.key === 'keyword') {
+    keyword.value = String(payload.value ?? '')
+    return
+  }
+
+  if (payload.key === 'result') {
+    result.value = (payload.value as InterviewResult | '') || ''
+  }
+}
 
 async function submitForm() {
   const valid = await formRef.value?.validate().catch(() => false)

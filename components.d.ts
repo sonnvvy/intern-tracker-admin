@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    CrudDialogForm: typeof import('./src/components/common/CrudDialogForm.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCheckbox: typeof import('element-plus/es')['ElCheckbox']
@@ -42,10 +43,12 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElUpload: typeof import('element-plus/es')['ElUpload']
     JobCardItem: typeof import('./src/components/performance/JobCardItem.vue')['default']
+    PageHeaderBar: typeof import('./src/components/common/PageHeaderBar.vue')['default']
     PerformanceStats: typeof import('./src/components/performance/PerformanceStats.vue')['default']
     PerformanceToolbar: typeof import('./src/components/performance/PerformanceToolbar.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SearchFilterBar: typeof import('./src/components/common/SearchFilterBar.vue')['default']
     StatCard: typeof import('./src/components/StatCard.vue')['default']
     StatusTag: typeof import('./src/components/StatusTag.vue')['default']
     VirtualList: typeof import('./src/components/performance/VirtualList.vue')['default']
