@@ -1,4 +1,4 @@
-import { parseJsonBody, setJsonHeaders } from '../_lib/http'
+import { handlePreflight, parseJsonBody, setJsonHeaders } from '../_lib/http'
 import type { ApiRequest, ApiResponse } from '../_lib/http'
 
 interface InterviewChatRequestBody {
@@ -223,7 +223,12 @@ function toChatCompletionsUrl(apiUrl: string): string {
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
-  if (req.method !== 'POST') {
+  if (handlePreflight(req, res)) {
+    return
+  }
+
+  const method = String(req.method || '').toUpperCase()
+  if (method !== 'POST') {
     sendError(res, 405, 'Method Not Allowed')
     return
   }

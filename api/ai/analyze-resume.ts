@@ -1,4 +1,4 @@
-import { parseJsonBody, setJsonHeaders } from '../_lib/http'
+import { handlePreflight, parseJsonBody, setJsonHeaders } from '../_lib/http'
 import type { ApiRequest, ApiResponse } from '../_lib/http'
 
 interface AnalyzeResumeRequestBody {
@@ -191,6 +191,10 @@ function toChatCompletionsUrl(apiUrl: string): string {
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
+  if (handlePreflight(req, res)) {
+    return
+  }
+
   if (req.method !== 'POST') {
     sendError(res, 405, 'Method Not Allowed')
     return

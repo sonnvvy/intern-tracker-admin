@@ -15,8 +15,25 @@ export interface ApiError {
   message: string
 }
 
+function setCorsHeaders(res: ApiResponse): void {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+}
+
 export function setJsonHeaders(res: ApiResponse): void {
+  setCorsHeaders(res)
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
+}
+
+export function handlePreflight(req: ApiRequest, res: ApiResponse): boolean {
+  if (req.method !== 'OPTIONS') {
+    return false
+  }
+
+  setCorsHeaders(res)
+  res.status(204).json(null)
+  return true
 }
 
 export async function parseJsonBody<T>(req: ApiRequest): Promise<T> {
