@@ -95,9 +95,9 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { analyzeJobMatch, askInterviewQuestion } from '@/api/ai'
+import { getErrorDisplayMessage } from '@/api/error'
 import type { ChatAssistantResult, JobAdviceResult } from '@/types'
 
 const activeTab = ref<'chat' | 'match'>('chat')
@@ -110,16 +110,6 @@ const jobLoading = ref(false)
 const chatResult = ref<ChatAssistantResult | null>(null)
 const jobResult = ref<JobAdviceResult | null>(null)
 
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (axios.isAxiosError<{ message?: string }>(error)) {
-    return error.response?.data?.message || error.message || fallback
-  }
-  if (error instanceof Error) {
-    return error.message
-  }
-  return fallback
-}
-
 async function onAskQuestion() {
   const q = question.value.trim()
   if (!q) {
@@ -131,7 +121,7 @@ async function onAskQuestion() {
   try {
     chatResult.value = await askInterviewQuestion(q)
   } catch (error) {
-    const message = getErrorMessage(error, '生成失败，请稍后再试')
+    const message = getErrorDisplayMessage(error, '生成失败，请稍后再试')
     ElMessage.error(message)
   } finally {
     chatLoading.value = false
@@ -153,7 +143,7 @@ async function onAnalyzeJob() {
   try {
     jobResult.value = await analyzeJobMatch(payload)
   } catch (error) {
-    const message = getErrorMessage(error, '分析失败，请稍后再试')
+    const message = getErrorDisplayMessage(error, '分析失败，请稍后再试')
     ElMessage.error(message)
   } finally {
     jobLoading.value = false

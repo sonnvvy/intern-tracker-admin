@@ -134,6 +134,7 @@ import { ElMessage } from 'element-plus'
 import * as pdfjsLib from 'pdfjs-dist'
 import mammoth from 'mammoth/mammoth.browser'
 import { analyzeResume } from '@/api/ai'
+import { createAppError, getErrorDisplayMessage } from '@/api/error'
 import type { ResumeAnalysisResult } from '@/types'
 import AIAssistant from './components/AIAssistant.vue'
 
@@ -166,7 +167,7 @@ const currentStatusTitle = computed(() => progressSteps[Math.min(activeStep.valu
 const currentStatusDescription = computed(
   () => progressSteps[Math.min(activeStep.value, progressSteps.length - 1)].description
 )
-const defaultErrorText = '解析失败：请检查文件清晰度或网络状态后重试。扫描版 PDF 建议上传更清晰版本。'
+const defaultErrorText = '请检查文件清晰度或网络状态后重试。扫描版 PDF 建议上传更清晰版本。'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
 
@@ -238,7 +239,7 @@ async function extractResumeText(file: File): Promise<string> {
     return extractTextFromDocx(file)
   }
 
-  throw new Error('文件格式不支持：仅支持 PDF、DOCX')
+  throw createAppError('business', '文件格式不支持：仅支持 PDF、DOCX')
 }
 
 function clearState() {
@@ -329,7 +330,7 @@ async function startAnalyze() {
   try {
     const resumeText = await extractResumeText(selectedFile.value)
     if (!resumeText) {
-      throw new Error('文件解析失败：未提取到有效文本，请上传可复制文本的文件')
+      throw createAppError('business', '文件解析失败：未提取到有效文本，请上传可复制文本的文件')
     }
 
     const parsed = await analyzeResume(resumeText)
@@ -338,7 +339,7 @@ async function startAnalyze() {
     activeStep.value = progressSteps.length - 1
   } catch (error) {
     isError.value = true
-    errorText.value = error instanceof Error && error.message ? `解析失败：${error.message}` : defaultErrorText
+    errorText.value = `解析失败：${getErrorDisplayMessage(error, defaultErrorText)}`
   } finally {
     clearTimer()
     isLoading.value = false

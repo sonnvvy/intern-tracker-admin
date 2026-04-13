@@ -1,18 +1,16 @@
-import { handlePreflight, parseJsonBody, setJsonHeaders } from '../_lib/http'
+import {
+  API_CODE_BUSINESS,
+  API_CODE_SYSTEM,
+  API_CODE_UPSTREAM,
+  handlePreflight,
+  parseJsonBody,
+  sendFail,
+  sendOk
+} from '../_lib/http'
 import type { ApiRequest, ApiResponse } from '../_lib/http'
 
 interface AnalyzeResumeRequestBody {
   resumeText?: string
-}
-
-interface SuccessResponse<T> {
-  success: true
-  data: T
-}
-
-interface ErrorResponse {
-  success: false
-  message: string
 }
 
 interface ChatCompletionResponse {
@@ -46,11 +44,8 @@ function logError(message: string, extra?: Record<string, unknown>): void {
 }
 
 function sendError(res: ApiResponse, status: number, message: string): void {
-  setJsonHeaders(res)
-  res.status(status).json({
-    success: false,
-    message
-  } satisfies ErrorResponse)
+  const code = status >= 500 ? API_CODE_SYSTEM : API_CODE_BUSINESS
+  sendFail(res, status, code, message)
 }
 
 function safeJsonParse(input: string): unknown | null {
@@ -284,7 +279,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
         errorType: error instanceof Error ? error.name : typeof error
       })
 
-      sendError(res, 500, isTimeout ? 'LLM request timeout' : 'Failed to call LLM service')
+      sendFail(res, 500, API_CODE_UPSTREAM, isTimeout ? 'LLM request timeout' : 'Failed to call LLM service')
       return
     } finally {
       clearTimeout(timeoutId)
@@ -296,7 +291,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     })
 
     if (!llmResponse.ok) {
-      sendError(res, 500, 'LLM service returned an error')
+      sendFail(res, 500, API_CODE_UPSTREAM, 'LLM service returned an error')
       return
     }
 
@@ -312,11 +307,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
             note: 'Model response is not standard JSON, fallback rawText is returned.'
           }
 
-    setJsonHeaders(res)
-    res.status(200).json({
-      success: true,
-      data
-    } satisfies SuccessResponse<unknown>)
+    sendOk(res, data)
 
     logInfo('request completed', {
       success: true

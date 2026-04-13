@@ -1,4 +1,12 @@
-import { handlePreflight, parseJsonBody, setJsonHeaders } from '../_lib/http'
+import {
+  API_CODE_BUSINESS,
+  API_CODE_SYSTEM,
+  API_CODE_UPSTREAM,
+  handlePreflight,
+  parseJsonBody,
+  sendFail,
+  sendOk
+} from '../_lib/http'
 import type { ApiRequest, ApiResponse } from '../_lib/http'
 
 interface InterviewChatRequestBody {
@@ -10,16 +18,6 @@ interface InterviewChatResult {
   keyPoints: string[]
   followUps: string[]
   confidence: 'low' | 'medium' | 'high'
-}
-
-interface SuccessResponse<T> {
-  success: true
-  data: T
-}
-
-interface ErrorResponse {
-  success: false
-  message: string
 }
 
 interface ChatCompletionResponse {
@@ -47,11 +45,8 @@ const INTERVIEW_PROMPT = [
 ].join('\n')
 
 function sendError(res: ApiResponse, status: number, message: string): void {
-  setJsonHeaders(res)
-  res.status(status).json({
-    success: false,
-    message
-  } satisfies ErrorResponse)
+  const code = status >= 500 ? API_CODE_SYSTEM : API_CODE_BUSINESS
+  sendFail(res, status, code, message)
 }
 
 function safeJsonParse(input: string): unknown | null {
@@ -288,13 +283,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     const parsedData = modelContent ? tryParseModelJson(modelContent) : null
     const normalized = normalizeInterviewChatResult(parsedData, modelContent || rawResponseText)
 
-    setJsonHeaders(res)
-    res.status(200).json({
-      success: true,
-      data: normalized
-    } satisfies SuccessResponse<InterviewChatResult>)
+    sendOk<InterviewChatResult>(res, normalized)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Internal Server Error'
-    sendError(res, 500, message)
+    sendFail(res, 500, API_CODE_UPSTREAM, message)
   }
 }

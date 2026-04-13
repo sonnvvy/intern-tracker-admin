@@ -12,8 +12,21 @@ export interface ApiResponse {
 }
 
 export interface ApiError {
+  code: number
   message: string
 }
+
+export interface ApiEnvelope<T> {
+  code: number
+  message: string
+  data: T | null
+}
+
+export const API_CODE_OK = 0
+export const API_CODE_PERMISSION = 1401
+export const API_CODE_BUSINESS = 1400
+export const API_CODE_SYSTEM = 1500
+export const API_CODE_UPSTREAM = 1001
 
 function setCorsHeaders(res: ApiResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -74,17 +87,32 @@ export async function parseJsonBody<T>(req: ApiRequest): Promise<T> {
 }
 
 export function methodNotAllowed(res: ApiResponse): void {
-  setJsonHeaders(res)
-  res.status(405).json({ message: 'Method Not Allowed' } satisfies ApiError)
+  sendFail(res, 405, API_CODE_BUSINESS, 'Method Not Allowed')
 }
 
 export function badRequest(res: ApiResponse, message: string): void {
-  setJsonHeaders(res)
-  res.status(400).json({ message } satisfies ApiError)
+  sendFail(res, 400, API_CODE_BUSINESS, message)
 }
 
 export function internalError(res: ApiResponse, error: unknown): void {
   const message = error instanceof Error ? error.message : 'Internal Server Error'
+  sendFail(res, 500, API_CODE_SYSTEM, message)
+}
+
+export function sendOk<T>(res: ApiResponse, data: T, message = 'ok'): void {
   setJsonHeaders(res)
-  res.status(500).json({ message } satisfies ApiError)
+  res.status(200).json({
+    code: API_CODE_OK,
+    message,
+    data
+  } satisfies ApiEnvelope<T>)
+}
+
+export function sendFail(res: ApiResponse, status: number, code: number, message: string): void {
+  setJsonHeaders(res)
+  res.status(status).json({
+    code,
+    message,
+    data: null
+  } satisfies ApiEnvelope<null>)
 }
