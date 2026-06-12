@@ -3,7 +3,7 @@
     <PageHeaderBar
       class="summary-card"
       title="岗位投递"
-      subtitle="管理目标岗位、优先级和下一步动作，并通过跟进记录把状态流转串起来"
+      subtitle="管理目标岗位、优先级和投递进展，并通过跟进记录把状态流转串起来"
     >
       <template #actions>
         <div class="header-actions">
@@ -27,17 +27,17 @@
         <el-skeleton animated :rows="6" />
       </div>
 
-      <div v-else-if="filteredList.length === 0" class="empty-state">
+      <div v-else-if="deliveryStore.list.length === 0" class="empty-state">
         <el-empty description="暂无匹配数据" />
       </div>
 
       <template v-else>
         <div class="table-wrap">
-          <el-table :data="pagedList" border table-layout="fixed" class="delivery-table">
+          <el-table :data="deliveryStore.list" border table-layout="fixed" class="delivery-table">
             <el-table-column prop="companyName" label="目标公司" min-width="104" show-overflow-tooltip />
             <el-table-column prop="jobTitle" label="岗位名称" min-width="122" show-overflow-tooltip />
             <el-table-column v-if="!isMobileView" prop="channel" label="投递渠道" min-width="84" show-overflow-tooltip />
-            <el-table-column prop="city" label="工作城市" width="76" />
+            <el-table-column prop="city" label="工作城市" width="104" class-name="city-col" />
             <el-table-column label="优先级" width="116" align="center" class-name="priority-col">
               <template #default="scope">
                 <StatusTag :text="scope.row.priority" mode="priority" />
@@ -49,7 +49,6 @@
               </template>
             </el-table-column>
             <el-table-column prop="deliveryDate" label="投递日期" width="100" />
-            <el-table-column v-if="!isMobileView" prop="nextStep" label="下一步动作" min-width="148" show-overflow-tooltip />
             <el-table-column label="操作" width="236" align="center" class-name="operation-col">
               <template #default="scope">
                 <div class="action-group">
@@ -69,7 +68,9 @@
             v-model:page-size="pageSize"
             background
             layout="total, prev, pager, next"
-            :total="filteredList.length"
+            :total="tableTotal"
+            @current-change="handlePageChange"
+            @size-change="handlePageSizeChange"
           />
         </div>
       </template>
@@ -103,6 +104,15 @@
         <el-form-item label="工作城市" prop="city">
           <el-input v-model="form.city" placeholder="例如：苏州" />
         </el-form-item>
+        <el-form-item label="投递日期" prop="deliveryDate">
+          <el-date-picker
+            v-model="form.deliveryDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="请选择投递日期"
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-form-item label="优先级" prop="priority">
           <el-select v-model="form.priority" style="width: 100%">
             <el-option v-for="item in priorityOptions" :key="item" :label="item" :value="item" />
@@ -112,9 +122,6 @@
           <el-select v-model="form.status" style="width: 100%">
             <el-option v-for="item in statusOptions" :key="item" :label="statusLabelMap[item]" :value="item" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="下一步动作" prop="nextStep">
-          <el-input v-model="form.nextStep" type="textarea" :rows="2" maxlength="60" show-word-limit placeholder="例如：准备一面项目讲解" />
         </el-form-item>
         <el-form-item label="备注信息">
           <el-input v-model="form.remark" type="textarea" :rows="3" maxlength="100" show-word-limit placeholder="记录这个岗位的补充信息" />
@@ -131,7 +138,6 @@
           <div class="detail-item"><span>工作城市</span><strong>{{ currentRow.city }}</strong></div>
           <div class="detail-item"><span>优先级</span><strong>{{ currentRow.priority }}</strong></div>
           <div class="detail-item"><span>当前状态</span><strong>{{ statusLabelMap[currentRow.status] }}</strong></div>
-          <div class="detail-item detail-block"><span>下一步动作</span><strong>{{ currentRow.nextStep }}</strong></div>
           <div class="detail-item detail-block"><span>备注信息</span><strong>{{ currentRow.remark || '暂无' }}</strong></div>
         </div>
 
@@ -210,6 +216,7 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import CrudDialogForm from '@/components/common/CrudDialogForm.vue'
 import PageHeaderBar from '@/components/common/PageHeaderBar.vue'
 import SearchFilterBar from '@/components/common/SearchFilterBar.vue'
+import { createDelivery, deleteDelivery, fetchDeliveries, updateDelivery, updateDeliveryStatus } from '@/api/delivery'
 import { useAppStore } from '@/stores/app'
 import { useDeliveryStore } from '@/stores/delivery'
 import { debounce, throttle } from '@/utils/performance'
@@ -237,6 +244,7 @@ const statusDialogVisible = ref(false)
 const exportDialogVisible = ref(false)
 const exportLoading = ref(false)
 const tableLoading = ref(true)
+const tableTotal = ref(0)
 const isEdit = ref(false)
 const page = ref(appStore.deliveryViewCache.page || 1)
 const pageSize = ref(appStore.deliveryViewCache.pageSize || 5)
@@ -256,7 +264,6 @@ type ExportColumnKey =
   | 'priority'
   | 'status'
   | 'deliveryDate'
-  | 'nextStep'
   | 'remark'
 
 interface ExportColumnOption {
@@ -272,7 +279,6 @@ const exportColumnOptions: ExportColumnOption[] = [
   { key: 'priority', label: '优先级' },
   { key: 'status', label: '当前状态' },
   { key: 'deliveryDate', label: '投递日期' },
-  { key: 'nextStep', label: '下一步动作' },
   { key: 'remark', label: '备注信息' }
 ]
 
@@ -327,8 +333,8 @@ const createEmptyForm = () => ({
   channel: '',
   status: JOB_STATUS.APPLIED as DeliveryStatus,
   city: '',
+  deliveryDate: new Date().toISOString().slice(0, 10),
   priority: '正常跟进' as PriorityLevel,
-  nextStep: '',
   remark: ''
 })
 
@@ -344,10 +350,7 @@ const rules: FormRules<typeof form> = {
   jobTitle: [{ required: true, message: '请输入岗位名称', trigger: 'blur' }],
   channel: [{ required: true, message: '请输入投递渠道', trigger: 'blur' }],
   city: [{ required: true, message: '请输入工作城市', trigger: 'blur' }],
-  nextStep: [
-    { required: true, message: '请填写下一步动作', trigger: 'blur' },
-    { min: 4, max: 60, message: '长度保持在 4 到 60 个字符', trigger: 'blur' }
-  ]
+  deliveryDate: [{ required: true, message: '请选择投递日期', trigger: 'change' }]
 }
 
 const followRules: FormRules<typeof followForm> = {
@@ -369,25 +372,6 @@ const syncMobileView = throttle(() => {
   isMobileView.value = window.innerWidth < 768
 }, 200)
 
-const filteredList = computed(() => {
-  return deliveryStore.list.filter((item) => {
-    const normalizedKeyword = globalSearchKeyword.value
-    const matchKeyword =
-      !normalizedKeyword ||
-      item.companyName.toLowerCase().includes(normalizedKeyword) ||
-      item.jobTitle.toLowerCase().includes(normalizedKeyword) ||
-      item.city.toLowerCase().includes(normalizedKeyword)
-    const matchStatus = !status.value || item.status === status.value
-    const matchPriority = !priority.value || item.priority === priority.value
-    return matchKeyword && matchStatus && matchPriority
-  })
-})
-
-const pagedList = computed(() => {
-  const start = (page.value - 1) * pageSize.value
-  return filteredList.value.slice(start, start + pageSize.value)
-})
-
 const panelTodos = computed(() => deliveryStore.todoList.slice(0, 4))
 
 const prioritySummary = computed(() => [
@@ -395,10 +379,6 @@ const prioritySummary = computed(() => [
   { label: '正常跟进', value: deliveryStore.list.filter((item) => item.priority === '正常跟进').length },
   { label: '保底机会', value: deliveryStore.list.filter((item) => item.priority === '保底机会').length }
 ])
-
-watch([status, priority], () => {
-  page.value = 1
-})
 
 watch([globalSearchInput, status, priority, page, pageSize, selectedExportColumns], () => {
   appStore.updateDeliveryViewCache({
@@ -411,7 +391,7 @@ watch([globalSearchInput, status, priority, page, pageSize, selectedExportColumn
   })
 })
 
-function resetFilter() {
+async function resetFilter() {
   appStore.resetDeliveryViewCache()
   globalSearchInput.value = ''
   globalSearchKeyword.value = ''
@@ -419,12 +399,23 @@ function resetFilter() {
   priority.value = ''
   page.value = 1
   pageSize.value = 5
-  selectedExportColumns.value = ['companyName', 'jobTitle', 'status', 'deliveryDate', 'priority', 'nextStep']
+  selectedExportColumns.value = ['companyName', 'jobTitle', 'status', 'deliveryDate', 'priority']
+  await reloadDeliveries()
 }
 
-function handleSearchNow() {
+async function handleSearchNow() {
   globalSearchKeyword.value = globalSearchInput.value.trim().toLowerCase()
   page.value = 1
+  await reloadDeliveries()
+}
+
+async function handlePageChange() {
+  await reloadDeliveries()
+}
+
+async function handlePageSizeChange() {
+  page.value = 1
+  await reloadDeliveries()
 }
 
 function handleFilterFieldChange(payload: { key: string; value: string | number | boolean | null | undefined }) {
@@ -480,8 +471,8 @@ function handleEdit(row: DeliveryItem) {
     channel: row.channel,
     status: row.status,
     city: row.city,
+    deliveryDate: row.deliveryDate,
     priority: row.priority,
-    nextStep: row.nextStep,
     remark: row.remark || ''
   })
   dialogVisible.value = true
@@ -499,7 +490,7 @@ function handleOpenStatusDialog(row: DeliveryItem) {
   statusDialogVisible.value = true
 }
 
-function handleConfirmStatusTransfer() {
+async function handleConfirmStatusTransfer() {
   if (!statusRow.value || !targetStatus.value) {
     ElMessage.warning('请选择下一状态')
     return
@@ -510,19 +501,54 @@ function handleConfirmStatusTransfer() {
     return
   }
 
-  const result = deliveryStore.transferDeliveryStatus(statusRow.value.id, targetStatus.value)
-  if (!result.ok) {
-    ElMessage.error(result.message)
+  try {
+    await updateDeliveryStatus(statusRow.value.id, targetStatus.value)
+    ElMessage.success('状态更新成功')
+    statusDialogVisible.value = false
+    await reloadDeliveries()
+    if (currentRow.value?.id === statusRow.value.id) {
+      currentRow.value = deliveryStore.list.find((item) => item.id === statusRow.value?.id) || null
+    }
+  } catch (error) {
+    ElMessage.error('状态更新失败，请确认后端服务和数据库连接正常')
     return
   }
+}
 
-  if (currentRow.value?.id === statusRow.value.id) {
-    const latest = deliveryStore.list.find((item) => item.id === statusRow.value?.id)
-    currentRow.value = latest || null
+function getDeliveryQueryParams() {
+  return {
+    keyword: globalSearchInput.value.trim(),
+    status: status.value,
+    page: page.value,
+    pageSize: pageSize.value
   }
+}
 
-  ElMessage.success(result.message)
-  statusDialogVisible.value = false
+async function reloadDeliveries(params = getDeliveryQueryParams()) {
+  tableLoading.value = true
+  try {
+    const result = await fetchDeliveries(params)
+    deliveryStore.setDeliveries(result.list)
+    tableTotal.value = result.total
+  } catch (error) {
+    deliveryStore.setDeliveries([])
+    tableTotal.value = 0
+    ElMessage.error('投递数据加载失败，请确认后端服务已启动')
+  } finally {
+    tableLoading.value = false
+  }
+}
+
+function buildDeliveryPayload() {
+  return {
+    company: form.companyName,
+    position: form.jobTitle,
+    status: form.status,
+    city: form.city,
+    channel: form.channel,
+    apply_date: form.deliveryDate,
+    note: form.remark
+  }
 }
 
 async function submitForm() {
@@ -530,14 +556,26 @@ async function submitForm() {
   if (!valid) return
 
   if (isEdit.value && editingId.value) {
-    const target = deliveryStore.list.find((item) => item.id === editingId.value)
-    if (!target) return
-    deliveryStore.updateDelivery({ ...target, ...form })
-    if (currentRow.value?.id === editingId.value) currentRow.value = { ...target, ...form }
-    ElMessage.success('修改成功')
+    try {
+      await updateDelivery(editingId.value, buildDeliveryPayload())
+      ElMessage.success('编辑成功')
+      await reloadDeliveries()
+      if (currentRow.value?.id === editingId.value) {
+        currentRow.value = deliveryStore.list.find((item) => item.id === editingId.value) || null
+      }
+    } catch (error) {
+      ElMessage.error('编辑失败，请确认后端服务和数据库连接正常')
+      return
+    }
   } else {
-    deliveryStore.addDelivery({ ...form })
-    ElMessage.success('新增成功')
+    try {
+      await createDelivery(buildDeliveryPayload())
+      ElMessage.success('新增成功')
+      await reloadDeliveries()
+    } catch (error) {
+      ElMessage.error('新增失败，请确认后端服务和数据库连接正常')
+      return
+    }
   }
 
   dialogVisible.value = false
@@ -556,8 +594,9 @@ async function submitFollowUp() {
 
 async function handleDelete(id: number) {
   await ElMessageBox.confirm('确认删除这条投递记录吗？', '提示', { type: 'warning' })
-  deliveryStore.removeDelivery(id)
+  await deleteDelivery(id)
   ElMessage.success('删除成功')
+  await reloadDeliveries()
 }
 
 function formatExportData(source: DeliveryItem[]): Array<Record<string, string>> {
@@ -613,8 +652,8 @@ async function withExportLoading(task: () => Promise<void>) {
 
 function handleExportCurrentPage() {
   withExportLoading(async () => {
-    await exportToExcel(pagedList.value)
-    if (pagedList.value.length > 0) {
+    await exportToExcel(deliveryStore.list)
+    if (deliveryStore.list.length > 0) {
       ElMessage.success('已导出当前页数据')
       exportDialogVisible.value = false
     }
@@ -623,19 +662,17 @@ function handleExportCurrentPage() {
 
 function handleExportAll() {
   withExportLoading(async () => {
-    await exportToExcel(filteredList.value)
-    if (filteredList.value.length > 0) {
+    await exportToExcel(deliveryStore.list)
+    if (deliveryStore.list.length > 0) {
       ElMessage.success('已导出全部筛选数据')
       exportDialogVisible.value = false
     }
   })
 }
 
-onMounted(() => {
+onMounted(async () => {
   syncMobileView()
-  window.setTimeout(() => {
-    tableLoading.value = false
-  }, 280)
+  await reloadDeliveries()
   window.addEventListener('resize', syncMobileView)
 })
 
@@ -806,6 +843,10 @@ onBeforeUnmount(() => {
 :deep(.operation-col .cell) {
   overflow: visible;
   text-overflow: clip;
+}
+
+:deep(.city-col .cell) {
+  white-space: nowrap;
 }
 
 :deep(.priority-col .cell),

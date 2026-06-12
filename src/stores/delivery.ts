@@ -97,6 +97,10 @@ export const useDeliveryStore = defineStore('delivery', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list.value))
   }
 
+  function setDeliveries(payload: DeliveryItem[]) {
+    list.value = payload
+  }
+
   function addDelivery(payload: Omit<DeliveryItem, 'id' | 'deliveryDate' | 'followUps'>) {
     list.value.unshift({
       ...payload,
@@ -174,6 +178,7 @@ export const useDeliveryStore = defineStore('delivery', () => {
     dashboardStats,
     highPriorityCount,
     todoList,
+    setDeliveries,
     addDelivery,
     updateDelivery,
     removeDelivery,
