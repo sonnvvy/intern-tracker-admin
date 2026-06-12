@@ -1,5 +1,5 @@
-import axios from 'axios'
 import type { DeliveryItem } from '@/types'
+import http from '@/api/http'
 import { JOB_STATUS, normalizeJobStatus } from '@/utils/statusMachine'
 
 interface BackendDelivery {
@@ -45,10 +45,6 @@ export interface FetchDeliveriesResult {
   pageSize: number
 }
 
-const deliveryClient = axios.create({
-  baseURL: import.meta.env.VITE_BACKEND_BASE_URL || 'http://localhost:3001'
-})
-
 function formatDeliveryDate(value?: string | Date | null): string {
   if (!value) return new Date().toISOString().slice(0, 10)
 
@@ -84,7 +80,7 @@ function mapBackendDelivery(item: BackendDelivery): DeliveryItem {
 }
 
 export async function fetchDeliveries(params?: FetchDeliveriesParams): Promise<FetchDeliveriesResult> {
-  const { data } = await deliveryClient.get<BackendDeliveryPage>('/deliveries', { params })
+  const { data } = await http.get<BackendDeliveryPage>('/deliveries', { params })
   const list = Array.isArray(data.list) ? data.list.map(mapBackendDelivery) : []
   return {
     list,
@@ -95,21 +91,21 @@ export async function fetchDeliveries(params?: FetchDeliveriesParams): Promise<F
 }
 
 export async function createDelivery(payload: SaveDeliveryPayload) {
-  const { data } = await deliveryClient.post('/deliveries', payload)
+  const { data } = await http.post('/deliveries', payload)
   return data
 }
 
 export async function updateDelivery(id: number, payload: SaveDeliveryPayload) {
-  const { data } = await deliveryClient.put(`/deliveries/${id}`, payload)
+  const { data } = await http.put(`/deliveries/${id}`, payload)
   return data
 }
 
 export async function deleteDelivery(id: number) {
-  const { data } = await deliveryClient.delete(`/deliveries/${id}`)
+  const { data } = await http.delete(`/deliveries/${id}`)
   return data
 }
 
 export async function updateDeliveryStatus(id: number, status: string) {
-  const { data } = await deliveryClient.put(`/deliveries/${id}`, { status })
+  const { data } = await http.put(`/deliveries/${id}`, { status })
   return data
 }

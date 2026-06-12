@@ -2,9 +2,9 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { UserInfo } from '@/types'
 import { getToken, setToken, removeToken } from '@/utils/auth'
-import { login as mockLogin } from '@/api/auth'
+import { login as apiLogin } from '@/api/auth'
 
-const USER_KEY = 'intern-admin-user'
+const USER_KEY = 'user'
 const PERFORMANCE_TEST_USERS = ['admin']
 
 export const useUserStore = defineStore('user', () => {
@@ -18,7 +18,14 @@ export const useUserStore = defineStore('user', () => {
   const savedUser = localStorage.getItem(USER_KEY)
   if (savedUser) {
     try {
-      userInfo.value = JSON.parse(savedUser)
+      const parsedUser = JSON.parse(savedUser) as Partial<UserInfo>
+      userInfo.value = {
+        id: parsedUser.id ? String(parsedUser.id) : undefined,
+        username: parsedUser.username,
+        name: parsedUser.name || parsedUser.username || '',
+        nickname: parsedUser.nickname || parsedUser.username,
+        role: parsedUser.role || '前端求职者'
+      }
     } catch {
       // 如果解析失败，使用默认值
     }
@@ -35,20 +42,21 @@ export const useUserStore = defineStore('user', () => {
    */
   async function login(username: string, password: string) {
     try {
-      const response = await mockLogin({ username, password })
+      const response = await apiLogin({ username, password })
 
       // 保存 token 和用户信息
       token.value = response.token
       setToken(response.token)
+      localStorage.setItem('token', response.token)
+      localStorage.setItem('user', JSON.stringify(response.user))
 
       userInfo.value = {
-        id: response.userInfo.id,
-        username: response.userInfo.username,
-        name: response.userInfo.nickname,
-        nickname: response.userInfo.nickname,
-        role: response.userInfo.role
+        id: String(response.user.id),
+        username: response.user.username,
+        name: response.user.username,
+        nickname: response.user.username,
+        role: '前端求职者'
       }
-      localStorage.setItem(USER_KEY, JSON.stringify(userInfo.value))
 
       return response
     } catch (error) {
@@ -67,6 +75,8 @@ export const useUserStore = defineStore('user', () => {
       role: '前端求职者'
     }
     localStorage.removeItem(USER_KEY)
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
   }
 
   /**
@@ -75,6 +85,8 @@ export const useUserStore = defineStore('user', () => {
   function clearToken() {
     token.value = ''
     removeToken()
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
   }
 
   /**
@@ -83,6 +95,7 @@ export const useUserStore = defineStore('user', () => {
   function setTokenAndPersist(newToken: string) {
     token.value = newToken
     setToken(newToken)
+    localStorage.setItem('token', newToken)
   }
 
   return {

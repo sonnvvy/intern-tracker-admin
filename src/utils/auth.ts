@@ -2,7 +2,7 @@
  * Token 持久化管理
  */
 
-const TOKEN_KEY = 'intern-admin-token'
+const TOKEN_KEY = 'token'
 
 /**
  * 从本地存储获取 token

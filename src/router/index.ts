@@ -55,9 +55,10 @@ const whiteList = ['/login']
 
 router.beforeEach((to, _from, next) => {
   const userStore = useUserStore()
+  const token = localStorage.getItem('token')
 
   // 如果访问的是受保护的页面但未登录
-  if (!whiteList.includes(to.path) && !userStore.isLoggedIn) {
+  if (!whiteList.includes(to.path) && !token) {
     // 保存原本要访问的页面
     sessionStorage.setItem('redirectFrom', to.path)
     next('/login')
@@ -65,7 +66,7 @@ router.beforeEach((to, _from, next) => {
   }
 
   // 如果已登录且访问登录页，则重定向到首页
-  if (to.path === '/login' && userStore.isLoggedIn) {
+  if (to.path === '/login' && token) {
     next('/dashboard')
     return
   }
