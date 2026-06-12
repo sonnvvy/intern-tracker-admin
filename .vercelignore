@@ -1,0 +1,8 @@
+backend
+backend/**
+api
+api/**
+.env
+.env.*
+!.env.example
+!.env.local.example
