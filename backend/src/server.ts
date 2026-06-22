@@ -1,4 +1,5 @@
 import cors from 'cors'
+import type { CorsOptions } from 'cors'
 import express from 'express'
 import jwt from 'jsonwebtoken'
 import type { ResultSetHeader, RowDataPacket } from 'mysql2'
@@ -6,7 +7,6 @@ import aiRouter from './routes/ai.js'
 import { config } from './config.js'
 import { pool } from './db.js'
 import { HttpError } from './types.js'
-import 'dotenv/config'
 
 interface AuthRequest extends express.Request {
   user?: {
@@ -17,7 +17,18 @@ interface AuthRequest extends express.Request {
 
 const app = express()
 
-app.use(cors())
+const corsOptions: CorsOptions = {
+  origin(origin, callback) {
+    if (!origin || config.frontendOrigins.includes(origin)) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error(`CORS origin is not allowed: ${origin}`))
+  }
+}
+
+app.use(cors(corsOptions))
 app.use(express.json({ limit: '2mb' }))
 app.use('/ai', aiRouter)
 
@@ -39,7 +50,7 @@ const authMiddleware = (
 
     const decoded = jwt.verify(
       token,
-      'intern-tracker-secret'
+      config.jwtSecret
     ) as {
       userId: number
       username: string
@@ -142,7 +153,7 @@ app.post('/login', async (req, res) => {
         userId: user.id,
         username: user.username,
       },
-      'intern-tracker-secret',
+      config.jwtSecret,
       {
         expiresIn: '7d',
       }

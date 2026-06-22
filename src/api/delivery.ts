@@ -1,8 +1,8 @@
 import type { DeliveryItem } from '@/types'
-import http from '@/api/http'
+import { supabase } from '@/api/supabase'
 import { JOB_STATUS, normalizeJobStatus } from '@/utils/statusMachine'
 
-interface BackendDelivery {
+interface DeliveryRow {
   id: number
   company: string
   position: string
@@ -31,13 +31,6 @@ interface FetchDeliveriesParams {
   pageSize?: number
 }
 
-interface BackendDeliveryPage {
-  list: BackendDelivery[]
-  total: number
-  page: number
-  pageSize: number
-}
-
 export interface FetchDeliveriesResult {
   list: DeliveryItem[]
   total: number
@@ -56,7 +49,7 @@ function formatDeliveryDate(value?: string | Date | null): string {
   return date.toISOString().slice(0, 10)
 }
 
-function mapBackendDelivery(item: BackendDelivery): DeliveryItem {
+function mapDeliveryRow(item: DeliveryRow): DeliveryItem {
   return {
     id: item.id,
     companyName: item.company,
@@ -73,39 +66,121 @@ function mapBackendDelivery(item: BackendDelivery): DeliveryItem {
         id: item.id,
         date: formatDeliveryDate(item.created_at),
         action: '完成投递',
-        note: '来自后端 deliveries 表'
+        note: '来自 Supabase deliveries 表'
       }
     ]
   }
 }
 
 export async function fetchDeliveries(params?: FetchDeliveriesParams): Promise<FetchDeliveriesResult> {
-  const { data } = await http.get<BackendDeliveryPage>('/deliveries', { params })
-  const list = Array.isArray(data.list) ? data.list.map(mapBackendDelivery) : []
+  const page = Math.max(params?.page || 1, 1)
+  const pageSize = Math.max(params?.pageSize || 10, 1)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  let query = supabase
+    .from('deliveries')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to)
+
+  const keyword = params?.keyword?.trim()
+  if (keyword) {
+    const escapedKeyword = keyword.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    query = query.or(
+      `company.ilike."%${escapedKeyword}%",position.ilike."%${escapedKeyword}%"`
+    )
+  }
+
+  const status = params?.status?.trim()
+  if (status) {
+    query = query.eq('status', status)
+  }
+
+  const { data, count, error } = await query
+  if (error) {
+    throw new Error(error.message)
+  }
+
   return {
-    list,
-    total: Number(data.total || 0),
-    page: Number(data.page || params?.page || 1),
-    pageSize: Number(data.pageSize || params?.pageSize || 10)
+    list: (data as DeliveryRow[] | null)?.map(mapDeliveryRow) || [],
+    total: count || 0,
+    page,
+    pageSize
   }
 }
 
 export async function createDelivery(payload: SaveDeliveryPayload) {
-  const { data } = await http.post('/deliveries', payload)
+  const { data, error } = await supabase
+    .from('deliveries')
+    .insert({
+      company: payload.company,
+      position: payload.position,
+      status: payload.status,
+      city: payload.city,
+      channel: payload.channel,
+      apply_date: payload.apply_date,
+      note: payload.note
+    })
+    .select()
+    .single()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
   return data
 }
 
 export async function updateDelivery(id: number, payload: SaveDeliveryPayload) {
-  const { data } = await http.put(`/deliveries/${id}`, payload)
+  const { data, error } = await supabase
+    .from('deliveries')
+    .update({
+      company: payload.company,
+      position: payload.position,
+      status: payload.status,
+      city: payload.city,
+      channel: payload.channel,
+      apply_date: payload.apply_date,
+      note: payload.note
+    })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
   return data
 }
 
 export async function deleteDelivery(id: number) {
-  const { data } = await http.delete(`/deliveries/${id}`)
+  const { data, error } = await supabase
+    .from('deliveries')
+    .delete()
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
   return data
 }
 
 export async function updateDeliveryStatus(id: number, status: string) {
-  const { data } = await http.put(`/deliveries/${id}`, { status })
+  const { data, error } = await supabase
+    .from('deliveries')
+    .update({ status })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
   return data
 }

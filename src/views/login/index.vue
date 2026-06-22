@@ -15,7 +15,7 @@
         @keyup.enter="handleLogin"
       >
         <el-form-item prop="username">
-          <el-input v-model="loginForm.username" placeholder="用户名" :disabled="loading" clearable size="large">
+          <el-input v-model="loginForm.username" placeholder="邮箱" :disabled="loading" clearable size="large">
             <template #prefix>
               <el-icon><User /></el-icon>
             </template>
@@ -68,7 +68,7 @@
         @keyup.enter="handleRegister"
       >
         <el-form-item prop="username">
-          <el-input v-model="registerForm.username" placeholder="用户名" :disabled="loading" clearable size="large">
+          <el-input v-model="registerForm.username" placeholder="邮箱" :disabled="loading" clearable size="large">
             <template #prefix>
               <el-icon><User /></el-icon>
             </template>
@@ -157,7 +157,10 @@ const registerForm = reactive({
 })
 
 const loginRules: FormRules<typeof loginForm> = {
-  username: [{ required: true, message: '用户名不能为空', trigger: 'blur' }],
+  username: [
+    { required: true, message: '邮箱不能为空', trigger: 'blur' },
+    { type: 'email', message: '请输入有效的邮箱地址', trigger: ['blur', 'change'] }
+  ],
   password: [{ required: true, message: '密码不能为空', trigger: 'blur' }]
 }
 
@@ -176,7 +179,10 @@ const validateConfirmPassword = (_rule: unknown, value: string, callback: (error
 }
 
 const registerRules: FormRules<typeof registerForm> = {
-  username: [{ required: true, message: '用户名不能为空', trigger: 'blur' }],
+  username: [
+    { required: true, message: '邮箱不能为空', trigger: 'blur' },
+    { type: 'email', message: '请输入有效的邮箱地址', trigger: ['blur', 'change'] }
+  ],
   password: [{ required: true, message: '密码不能为空', trigger: 'blur' }],
   confirmPassword: [{ validator: validateConfirmPassword, trigger: 'blur' }]
 }

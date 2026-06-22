@@ -121,9 +121,12 @@ function handleMenuSelect() {
   }
 }
 
-function handleLogout() {
-  userStore.logout()
-  router.push('/login')
+async function handleLogout() {
+  try {
+    await userStore.logout()
+  } finally {
+    router.push('/login')
+  }
 }
 
 onMounted(() => {

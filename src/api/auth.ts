@@ -1,17 +1,8 @@
-import http from '@/api/http'
+import { supabase } from '@/api/supabase'
 
 export interface LoginRequest {
   username: string
   password: string
-}
-
-export interface LoginResponse {
-  message: string
-  token: string
-  user: {
-    id: number
-    username: string
-  }
 }
 
 export interface RegisterRequest {
@@ -19,17 +10,36 @@ export interface RegisterRequest {
   password: string
 }
 
-export interface RegisterResponse {
-  message: string
-  id: number
-}
+export async function login(req: LoginRequest) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: req.username,
+    password: req.password
+  })
 
-export async function login(req: LoginRequest): Promise<LoginResponse> {
-  const { data } = await http.post<LoginResponse>('/login', req)
+  if (error) {
+    throw error
+  }
+
   return data
 }
 
-export async function register(req: RegisterRequest): Promise<RegisterResponse> {
-  const { data } = await http.post<RegisterResponse>('/register', req)
+export async function register(req: RegisterRequest) {
+  const { data, error } = await supabase.auth.signUp({
+    email: req.username,
+    password: req.password
+  })
+
+  if (error) {
+    throw error
+  }
+
   return data
+}
+
+export async function logout() {
+  const { error } = await supabase.auth.signOut()
+
+  if (error) {
+    throw error
+  }
 }
