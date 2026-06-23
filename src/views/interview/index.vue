@@ -26,7 +26,7 @@
 
     <div class="content-grid">
       <div class="page-card">
-        <el-table :data="filteredList" border>
+        <el-table v-loading="interviewStore.loading" :data="filteredList" border>
           <el-table-column prop="companyName" label="目标公司" min-width="130" />
           <el-table-column prop="jobTitle" label="岗位名称" min-width="150" />
           <el-table-column prop="round" label="轮次" width="90" />
@@ -58,7 +58,7 @@
       </div>
     </div>
 
-    <CrudDialogForm v-model="dialogVisible" title="新增面试复盘" width="560px" @confirm="submitForm">
+    <CrudDialogForm v-model="dialogVisible" title="新增面试复盘" width="560px" :submitting="submitting" @confirm="submitForm">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="92px">
         <el-form-item label="目标公司" prop="companyName"><el-input v-model="form.companyName" /></el-form-item>
         <el-form-item label="岗位名称" prop="jobTitle"><el-input v-model="form.jobTitle" /></el-form-item>
@@ -83,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import CrudDialogForm from '@/components/common/CrudDialogForm.vue'
 import PageHeaderBar from '@/components/common/PageHeaderBar.vue'
@@ -91,11 +91,13 @@ import SearchFilterBar from '@/components/common/SearchFilterBar.vue'
 import { useInterviewStore } from '@/stores/interview'
 import StatusTag from '@/components/StatusTag.vue'
 import type { InterviewItem, InterviewResult } from '@/types'
+import { debounce } from '@/utils/performance'
 
 const interviewStore = useInterviewStore()
 const keyword = ref('')
 const result = ref<InterviewResult | ''>('')
 const dialogVisible = ref(false)
+const submitting = ref(false)
 const formRef = ref<FormInstance>()
 const resultOptions: InterviewResult[] = ['待开始', '通过', '未通过', '待通知']
 
@@ -137,46 +139,77 @@ const rules: FormRules<typeof form> = {
   summary: [{ required: true, message: '请填写复盘内容', trigger: 'blur' }]
 }
 
-const filteredList = computed(() => {
-  return interviewStore.list.filter((item) => {
-    const matchKeyword =
-      !keyword.value ||
-      item.companyName.includes(keyword.value) ||
-      item.jobTitle.includes(keyword.value) ||
-      item.questionTags.some((tag) => tag.includes(keyword.value))
-    const matchResult = !result.value || item.result === result.value
-    return matchKeyword && matchResult
-  })
-})
+const filteredList = computed(() => interviewStore.list)
 
 const allTagOptions = computed(() => [...new Set(interviewStore.list.flatMap((item) => item.questionTags))])
 
 function handleFilterFieldChange(payload: { key: string; value: string | number | boolean | null | undefined }) {
   if (payload.key === 'keyword') {
     keyword.value = String(payload.value ?? '')
+    reloadInterviewsDebounced()
     return
   }
 
   if (payload.key === 'result') {
     result.value = (payload.value as InterviewResult | '') || ''
+    void reloadInterviews()
   }
 }
+
+async function reloadInterviews() {
+  try {
+    await interviewStore.fetchInterviews({
+      keyword: keyword.value,
+      result: result.value
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '面试复盘数据加载失败'
+    ElMessage.error(message)
+  }
+}
+
+const reloadInterviewsDebounced = debounce(() => {
+  void reloadInterviews()
+}, 300)
 
 async function submitForm() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
-  interviewStore.addInterview({ ...form, questionTags: [...form.questionTags] })
-  ElMessage.success('新增复盘成功')
-  dialogVisible.value = false
-  form.companyName = ''
-  form.jobTitle = ''
-  form.round = ''
-  form.interviewDate = ''
-  form.interviewer = '待补充'
-  form.result = '待开始'
-  form.summary = ''
-  form.questionTags = []
+
+  submitting.value = true
+  try {
+    await interviewStore.addInterview({
+      company: form.companyName,
+      position: form.jobTitle,
+      round: form.round,
+      interview_time: form.interviewDate,
+      interviewer_role: form.interviewer,
+      result: form.result,
+      knowledge_tags: [...form.questionTags],
+      note: form.summary
+    })
+    ElMessage.success('新增复盘成功')
+    dialogVisible.value = false
+    form.companyName = ''
+    form.jobTitle = ''
+    form.round = ''
+    form.interviewDate = ''
+    form.interviewer = '待补充'
+    form.result = '待开始'
+    form.summary = ''
+    form.questionTags = []
+    await reloadInterviews()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '新增复盘失败'
+    ElMessage.error(message)
+  } finally {
+    submitting.value = false
+  }
 }
+
+onMounted(() => {
+  void reloadInterviews()
+})
 </script>
 
 <style scoped lang="scss">

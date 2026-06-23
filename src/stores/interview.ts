@@ -1,17 +1,17 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { interviewSeeds } from '@/api/mock'
+import {
+  createInterview as createInterviewRequest,
+  fetchInterviews as fetchInterviewsRequest,
+  type CreateInterviewPayload,
+  type FetchInterviewsParams
+} from '@/api/interview'
 import type { InterviewItem, InterviewResult } from '@/types'
 
-const STORAGE_KEY = 'intern-admin-interviews'
-
-function loadInitialData(): InterviewItem[] {
-  const cache = localStorage.getItem(STORAGE_KEY)
-  return cache ? JSON.parse(cache) : interviewSeeds
-}
-
 export const useInterviewStore = defineStore('interview', () => {
-  const list = ref<InterviewItem[]>(loadInitialData())
+  const list = ref<InterviewItem[]>([])
+  const loading = ref(false)
+  let latestRequestId = 0
 
   const upcomingCount = computed(
     () => list.value.filter((item) => item.result === '待开始' || item.result === '待通知').length
@@ -28,13 +28,22 @@ export const useInterviewStore = defineStore('interview', () => {
       .map(([name, value]) => ({ name, value }))
   })
 
-  function persist() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list.value))
+  async function fetchInterviews(params?: FetchInterviewsParams) {
+    const requestId = ++latestRequestId
+    loading.value = true
+    try {
+      const data = await fetchInterviewsRequest(params)
+      if (requestId === latestRequestId) list.value = data
+      return data
+    } finally {
+      if (requestId === latestRequestId) loading.value = false
+    }
   }
 
-  function addInterview(payload: Omit<InterviewItem, 'id'>) {
-    list.value.unshift({ ...payload, id: Date.now() })
-    persist()
+  async function addInterview(payload: CreateInterviewPayload) {
+    const created = await createInterviewRequest(payload)
+    list.value.unshift(created)
+    return created
   }
 
   function getResultTagType(result: InterviewResult) {
@@ -49,8 +58,10 @@ export const useInterviewStore = defineStore('interview', () => {
 
   return {
     list,
+    loading,
     upcomingCount,
     tagFrequency,
+    fetchInterviews,
     addInterview,
     getResultTagType
   }

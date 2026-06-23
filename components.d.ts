@@ -54,4 +54,7 @@ declare module 'vue' {
     StatusTag: typeof import('./src/components/StatusTag.vue')['default']
     VirtualList: typeof import('./src/components/performance/VirtualList.vue')['default']
   }
+  export interface GlobalDirectives {
+    vLoading: typeof import('element-plus/es')['ElLoadingDirective']
+  }
 }
