@@ -1,23 +1,9 @@
-import {
-  API_CODE_BUSINESS,
-  API_CODE_SYSTEM,
-  API_CODE_UPSTREAM,
-  handlePreflight,
-  parseJsonBody,
-  sendFail,
-  sendOk
-} from '../_lib/http'
+import { handlePreflight, parseJsonBody, setJsonHeaders } from '../_lib/http'
 import type { ApiRequest, ApiResponse } from '../_lib/http'
 
 interface InterviewChatRequestBody {
-  question?: string
-}
-
-interface InterviewChatResult {
-  answer: string
-  keyPoints: string[]
-  followUps: string[]
-  confidence: 'low' | 'medium' | 'high'
+  message?: unknown
+  context?: unknown
 }
 
 interface ChatCompletionResponse {
@@ -28,264 +14,120 @@ interface ChatCompletionResponse {
   }>
 }
 
-interface LlmConfig {
-  apiKey: string
-  apiUrl: string
-  model: string
+const SYSTEM_PROMPT = '你是一个面试复盘与前端求职助手。'
+const REQUEST_TIMEOUT_MS = 30_000
+
+function sendJson(res: ApiResponse, status: number, body: unknown): void {
+  setJsonHeaders(res)
+  res.status(status).json(body)
 }
 
-const INTERVIEW_PROMPT = [
-  '你是专业的面试辅导助手。',
-  '请根据用户问题，返回结构化 JSON，字段必须包含：',
-  'answer: string（建议回答）',
-  'keyPoints: string[]（关键要点，3-6条）',
-  'followUps: string[]（可追问方向，2-5条）',
-  "confidence: 'low' | 'medium' | 'high'",
-  '只返回 JSON，不要额外解释。'
-].join('\n')
-
-function sendError(res: ApiResponse, status: number, message: string): void {
-  const code = status >= 500 ? API_CODE_SYSTEM : API_CODE_BUSINESS
-  sendFail(res, status, code, message)
-}
-
-function safeJsonParse(input: string): unknown | null {
-  try {
-    return JSON.parse(input)
-  } catch {
-    return null
-  }
-}
-
-function extractBalancedJsonObject(input: string): string | null {
-  const start = input.indexOf('{')
-  if (start === -1) {
-    return null
-  }
-
-  let depth = 0
-  let inString = false
-  let escaped = false
-
-  for (let i = start; i < input.length; i += 1) {
-    const ch = input[i]
-
-    if (escaped) {
-      escaped = false
-      continue
-    }
-
-    if (ch === '\\') {
-      escaped = true
-      continue
-    }
-
-    if (ch === '"') {
-      inString = !inString
-      continue
-    }
-
-    if (inString) {
-      continue
-    }
-
-    if (ch === '{') {
-      depth += 1
-    } else if (ch === '}') {
-      depth -= 1
-      if (depth === 0) {
-        return input.slice(start, i + 1)
-      }
-    }
-  }
-
-  return null
-}
-
-function tryParseModelJson(content: string): unknown | null {
-  const direct = safeJsonParse(content)
-  if (direct !== null) {
-    return direct
-  }
-
-  const fence = String.fromCharCode(96).repeat(3)
-  const fencedPattern = new RegExp(fence + '(?:json)?\\s*([\\s\\S]*?)\\s*' + fence, 'i')
-  const fencedMatch = content.match(fencedPattern)
-  if (fencedMatch?.[1]) {
-    const fencedParsed = safeJsonParse(fencedMatch[1])
-    if (fencedParsed !== null) {
-      return fencedParsed
-    }
-  }
-
-  const balanced = extractBalancedJsonObject(content)
-  if (balanced) {
-    const balancedParsed = safeJsonParse(balanced)
-    if (balancedParsed !== null) {
-      return balancedParsed
-    }
-  }
-
-  return null
-}
-
-function normalizeMessageContent(content: unknown): string {
-  if (typeof content === 'string') {
-    return content
-  }
+function normalizeContent(content: unknown): string {
+  if (typeof content === 'string') return content.trim()
 
   if (Array.isArray(content)) {
-    const merged = content
+    return content
       .map((part) => {
-        if (typeof part === 'string') {
-          return part
-        }
-
-        if (part && typeof part === 'object' && 'text' in part && typeof (part as { text?: unknown }).text === 'string') {
+        if (typeof part === 'string') return part
+        if (
+          part &&
+          typeof part === 'object' &&
+          'text' in part &&
+          typeof (part as { text?: unknown }).text === 'string'
+        ) {
           return (part as { text: string }).text
         }
-
         return ''
       })
       .join('\n')
       .trim()
-
-    if (merged) {
-      return merged
-    }
   }
 
-  return JSON.stringify(content ?? '')
+  return ''
 }
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return value
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
-
-function normalizeConfidence(value: unknown): 'low' | 'medium' | 'high' {
-  if (value === 'low' || value === 'medium' || value === 'high') {
-    return value
-  }
-  return 'medium'
-}
-
-function normalizeInterviewChatResult(value: unknown, rawText: string): InterviewChatResult {
-  const payload = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
-
-  const answer = typeof payload.answer === 'string' && payload.answer.trim() ? payload.answer.trim() : rawText
-
-  return {
-    answer,
-    keyPoints: toStringArray(payload.keyPoints),
-    followUps: toStringArray(payload.followUps),
-    confidence: normalizeConfidence(payload.confidence)
-  }
-}
-
-function resolveLlmConfig(): LlmConfig | null {
-  const nodeProcKey = 'proc' + 'ess'
-  const env =
-    ((globalThis as Record<string, unknown>)[nodeProcKey] as { env?: Record<string, string | undefined> } | undefined)
-      ?.env || {}
-
-  const apiKey = env.LLM_API_KEY || env.DEEPSEEK_API_KEY || env.OPENAI_API_KEY || ''
-  const apiUrl = env.LLM_API_URL || env.DEEPSEEK_BASE_URL || env.OPENAI_BASE_URL || ''
-  const model = env.LLM_MODEL || env.DEEPSEEK_MODEL || env.OPENAI_MODEL || ''
-
-  if (!apiKey || !apiUrl || !model) {
-    return null
-  }
-
-  return { apiKey, apiUrl, model }
-}
-
-function toChatCompletionsUrl(apiUrl: string): string {
-  const parsed = new URL(apiUrl)
-  const normalizedPath = parsed.pathname.replace(/\/+$/, '')
-  if (normalizedPath.endsWith('/chat/completions')) {
-    return parsed.toString()
-  }
-
-  parsed.pathname = `${normalizedPath}/chat/completions`
-  return parsed.toString()
+function buildUserMessage(message: string, context: string): string {
+  if (!context) return message
+  return `参考上下文：\n${context}\n\n用户问题：\n${message}`
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
-  if (handlePreflight(req, res)) {
+  if (handlePreflight(req, res)) return
+
+  if (String(req.method || '').toUpperCase() !== 'POST') {
+    sendJson(res, 405, { error: 'Method Not Allowed' })
     return
   }
 
-  const method = String(req.method || '').toUpperCase()
-  if (method !== 'POST') {
-    sendError(res, 405, 'Method Not Allowed')
+  let body: InterviewChatRequestBody
+  try {
+    body = await parseJsonBody<InterviewChatRequestBody>(req)
+  } catch {
+    sendJson(res, 400, { error: '请求体必须是有效的 JSON' })
     return
   }
+
+  const message = typeof body.message === 'string' ? body.message.trim() : ''
+  const context = typeof body.context === 'string' ? body.context.trim() : ''
+
+  if (!message) {
+    sendJson(res, 400, { error: 'message 不能为空' })
+    return
+  }
+
+  const apiUrl = process.env.LLM_API_URL?.trim()
+  const apiKey = process.env.LLM_API_KEY?.trim()
+  const model = process.env.LLM_MODEL?.trim()
+
+  if (!apiUrl || !apiKey || !model) {
+    sendJson(res, 500, { error: '服务端缺少 LLM_API_URL、LLM_API_KEY 或 LLM_MODEL 配置' })
+    return
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
   try {
-    const body = await parseJsonBody<InterviewChatRequestBody>(req)
-    const question = body.question?.trim()
-
-    if (!question) {
-      sendError(res, 400, 'question is required')
-      return
-    }
-
-    const llmConfig = resolveLlmConfig()
-
-    if (!llmConfig) {
-      sendError(res, 500, 'Missing required server environment variables for LLM')
-      return
-    }
-
-    const llmResponse = await fetch(toChatCompletionsUrl(llmConfig.apiUrl), {
+    const upstreamResponse = await fetch(apiUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + llmConfig.apiKey
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: llmConfig.model,
+        model,
         messages: [
-          {
-            role: 'system',
-            content: INTERVIEW_PROMPT
-          },
-          {
-            role: 'user',
-            content: question
-          }
-        ],
-        temperature: 0.3
-      })
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: buildUserMessage(message, context) }
+        ]
+      }),
+      signal: controller.signal
     })
 
-    const rawResponseText = await llmResponse.text()
+    const rawResponse = await upstreamResponse.text()
+    let responseData: ChatCompletionResponse | null = null
+    try {
+      responseData = JSON.parse(rawResponse) as ChatCompletionResponse
+    } catch {
+      responseData = null
+    }
 
-    if (!llmResponse.ok) {
-      const detail = rawResponseText.slice(0, 500)
-      sendError(
-        res,
-        500,
-        'LLM API request failed with status ' + llmResponse.status + ': ' + (detail || 'Unknown error')
-      )
+    if (!upstreamResponse.ok) {
+      sendJson(res, 502, { error: `LLM 服务请求失败（${upstreamResponse.status}）` })
       return
     }
 
-    const responseJson = safeJsonParse(rawResponseText) as ChatCompletionResponse | null
-    const modelContent = normalizeMessageContent(responseJson?.choices?.[0]?.message?.content)
-    const parsedData = modelContent ? tryParseModelJson(modelContent) : null
-    const normalized = normalizeInterviewChatResult(parsedData, modelContent || rawResponseText)
+    const answer = normalizeContent(responseData?.choices?.[0]?.message?.content)
+    if (!answer) {
+      sendJson(res, 502, { error: 'LLM 服务未返回有效回答' })
+      return
+    }
 
-    sendOk<InterviewChatResult>(res, normalized)
+    sendJson(res, 200, { answer })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal Server Error'
-    sendFail(res, 500, API_CODE_UPSTREAM, message)
+    const isTimeout = error instanceof Error && error.name === 'AbortError'
+    sendJson(res, 502, { error: isTimeout ? 'LLM 服务响应超时' : '无法连接 LLM 服务' })
+  } finally {
+    clearTimeout(timeoutId)
   }
 }

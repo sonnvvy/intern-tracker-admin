@@ -3,8 +3,17 @@
     <div class="login-form-wrapper">
       <div class="login-header">
         <h1 class="app-title">求职进度台</h1>
-        <p class="subtitle">{{ isRegisterMode ? '创建账号后开始管理岗位投递' : '前端求职追踪系统' }}</p>
+        <p class="subtitle">{{ isRegisterMode ? '仅支持使用邮箱创建账号' : '请使用注册邮箱和密码登录' }}</p>
       </div>
+
+      <el-alert
+        v-if="isRegisterMode"
+        class="auth-tip"
+        title="当前仅支持邮箱注册；注册后可能需要前往邮箱完成验证，验证后才能登录。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
 
       <el-form
         v-if="!isRegisterMode"
@@ -15,7 +24,7 @@
         @keyup.enter="handleLogin"
       >
         <el-form-item prop="username">
-          <el-input v-model="loginForm.username" placeholder="邮箱" :disabled="loading" clearable size="large">
+          <el-input v-model.trim="loginForm.username" placeholder="请输入注册邮箱" autocomplete="email" inputmode="email" :disabled="loading" clearable size="large" @update:model-value="clearError">
             <template #prefix>
               <el-icon><User /></el-icon>
             </template>
@@ -27,6 +36,7 @@
             v-model="loginForm.password"
             :type="showPassword ? 'text' : 'password'"
             placeholder="密码"
+            autocomplete="current-password"
             :disabled="loading"
             clearable
             size="large"
@@ -68,7 +78,7 @@
         @keyup.enter="handleRegister"
       >
         <el-form-item prop="username">
-          <el-input v-model="registerForm.username" placeholder="邮箱" :disabled="loading" clearable size="large">
+          <el-input v-model.trim="registerForm.username" placeholder="请输入用于注册的邮箱" autocomplete="email" inputmode="email" :disabled="loading" clearable size="large" @update:model-value="clearError">
             <template #prefix>
               <el-icon><User /></el-icon>
             </template>
@@ -80,6 +90,7 @@
             v-model="registerForm.password"
             :type="showPassword ? 'text' : 'password'"
             placeholder="密码"
+            autocomplete="new-password"
             :disabled="loading"
             clearable
             size="large"
@@ -100,7 +111,8 @@
           <el-input
             v-model="registerForm.confirmPassword"
             :type="showPassword ? 'text' : 'password'"
-            placeholder="确认密码"
+            placeholder="确认密码（至少 6 位）"
+            autocomplete="new-password"
             :disabled="loading"
             clearable
             size="large"
@@ -158,10 +170,10 @@ const registerForm = reactive({
 
 const loginRules: FormRules<typeof loginForm> = {
   username: [
-    { required: true, message: '邮箱不能为空', trigger: 'blur' },
-    { type: 'email', message: '请输入有效的邮箱地址', trigger: ['blur', 'change'] }
+    { required: true, message: '请输入注册邮箱', trigger: 'blur' },
+    { type: 'email', message: '请输入注册时使用的有效邮箱地址', trigger: ['blur', 'change'] }
   ],
-  password: [{ required: true, message: '密码不能为空', trigger: 'blur' }]
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
 const validateConfirmPassword = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
@@ -180,11 +192,14 @@ const validateConfirmPassword = (_rule: unknown, value: string, callback: (error
 
 const registerRules: FormRules<typeof registerForm> = {
   username: [
-    { required: true, message: '邮箱不能为空', trigger: 'blur' },
-    { type: 'email', message: '请输入有效的邮箱地址', trigger: ['blur', 'change'] }
+    { required: true, message: '请输入用于注册的邮箱', trigger: 'blur' },
+    { type: 'email', message: '注册账号必须使用有效的邮箱地址', trigger: ['blur', 'change'] }
   ],
-  password: [{ required: true, message: '密码不能为空', trigger: 'blur' }],
-  confirmPassword: [{ validator: validateConfirmPassword, trigger: 'blur' }]
+  password: [
+    { required: true, message: '请设置密码', trigger: 'blur' },
+    { min: 6, message: '密码至少需要 6 位', trigger: ['blur', 'change'] }
+  ],
+  confirmPassword: [{ validator: validateConfirmPassword, trigger: ['blur', 'change'] }]
 }
 
 const loading = ref(false)
@@ -196,13 +211,42 @@ function clearError() {
   if (error.value) error.value = ''
 }
 
-function getErrorMessage(err: unknown, fallback: string) {
-  if (err && typeof err === 'object' && 'response' in err) {
-    const response = (err as { response?: { data?: { message?: string } } }).response
-    return response?.data?.message || fallback
+type AuthAction = 'login' | 'register'
+
+function getAuthErrorMessage(err: unknown, action: AuthAction) {
+  const authError = err as { code?: unknown; message?: unknown }
+  const code = typeof authError?.code === 'string' ? authError.code : ''
+  const rawMessage = typeof authError?.message === 'string' ? authError.message.toLowerCase() : ''
+
+  const messageByCode: Record<string, string> = {
+    invalid_credentials: '邮箱或密码错误，请检查后重试',
+    email_not_confirmed: '该邮箱尚未完成验证，请先前往邮箱点击确认链接',
+    user_already_exists: '该邮箱已注册，请直接返回登录',
+    email_exists: '该邮箱已注册，请直接返回登录',
+    weak_password: '密码强度不足，请至少使用 6 位字符并避免过于简单的密码',
+    email_address_invalid: '邮箱地址格式无效，请检查后重新输入',
+    signup_disabled: '当前暂未开放新用户注册',
+    over_email_send_rate_limit: '验证邮件发送过于频繁，请稍后再试',
+    over_request_rate_limit: '操作过于频繁，请稍后再试',
+    captcha_failed: '人机验证失败，请刷新页面后重试'
   }
 
-  return err instanceof Error ? err.message : fallback
+  if (code && messageByCode[code]) return messageByCode[code]
+  if (rawMessage.includes('invalid login credentials')) return '邮箱或密码错误，请检查后重试'
+  if (rawMessage.includes('email not confirmed')) return '该邮箱尚未完成验证，请先前往邮箱点击确认链接'
+  if (rawMessage.includes('already registered') || rawMessage.includes('already exists')) {
+    return '该邮箱已注册，请直接返回登录'
+  }
+  if (rawMessage.includes('password') && (rawMessage.includes('weak') || rawMessage.includes('least'))) {
+    return '密码强度不足，请至少使用 6 位字符并避免过于简单的密码'
+  }
+  if (rawMessage.includes('fetch') || rawMessage.includes('network')) {
+    return '网络连接异常，请检查网络后重试'
+  }
+
+  return action === 'login'
+    ? '登录失败，请确认邮箱和密码是否正确'
+    : '注册失败，请检查邮箱和密码后重试'
 }
 
 function switchToRegister() {
@@ -233,11 +277,11 @@ async function handleLogin() {
   error.value = ''
 
   try {
-    await userStore.login(loginForm.username, loginForm.password)
+    await userStore.login(loginForm.username.toLowerCase(), loginForm.password)
     ElMessage.success('登录成功')
     router.push(getRedirectPath())
   } catch (err) {
-    error.value = getErrorMessage(err, '登录失败，请重试')
+    error.value = getAuthErrorMessage(err, 'login')
   } finally {
     loading.value = false
   }
@@ -256,14 +300,18 @@ async function handleRegister() {
   error.value = ''
 
   try {
-    await register({
-      username: registerForm.username,
+    const { session } = await register({
+      username: registerForm.username.toLowerCase(),
       password: registerForm.password
     })
-    ElMessage.success('注册成功，请登录')
+    ElMessage.success(
+      session
+        ? '注册成功，请使用邮箱和密码登录'
+        : '注册申请已提交，请前往邮箱完成验证后再登录'
+    )
     switchToLogin()
   } catch (err) {
-    error.value = getErrorMessage(err, '注册失败')
+    error.value = getAuthErrorMessage(err, 'register')
   } finally {
     loading.value = false
   }
@@ -317,6 +365,10 @@ async function handleRegister() {
     color: #6b7280;
     margin: 0;
   }
+}
+
+.auth-tip {
+  margin-bottom: 20px;
 }
 
 .login-form {

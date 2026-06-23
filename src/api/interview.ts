@@ -10,7 +10,7 @@ interface InterviewRow {
   interview_time: string | null
   interviewer_role: string | null
   result: string
-  knowledge_tags: string[] | null
+  knowledge_tags: unknown
   note: string | null
   created_at: string
 }
@@ -27,7 +27,7 @@ export interface CreateInterviewPayload {
   interview_time: string
   interviewer_role?: string
   result: InterviewResult
-  knowledge_tags: string[]
+  knowledge_tags: string[] | string
   note?: string
 }
 
@@ -37,6 +37,30 @@ function normalizeResult(value: string): InterviewResult {
   return interviewResults.includes(value as InterviewResult)
     ? (value as InterviewResult)
     : '待通知'
+}
+
+function normalizeTags(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter(Boolean)
+      .map(String)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(/[,，|、\s]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  return []
+}
+
+function serializeTags(value: string[] | string): string {
+  if (Array.isArray(value)) return normalizeTags(value).join(',')
+  return value.trim()
 }
 
 function formatInterviewTime(value: string | null): string {
@@ -62,7 +86,7 @@ function mapInterviewRow(row: InterviewRow): InterviewItem {
     interviewer: row.interviewer_role || '待补充',
     result: normalizeResult(row.result),
     summary: row.note || '',
-    questionTags: row.knowledge_tags || []
+    questionTags: normalizeTags(row.knowledge_tags)
   }
 }
 
@@ -119,7 +143,7 @@ export async function createInterview(payload: CreateInterviewPayload): Promise<
         : interviewTime.toISOString(),
       interviewer_role: payload.interviewer_role || '待补充',
       result: payload.result,
-      knowledge_tags: payload.knowledge_tags,
+      knowledge_tags: serializeTags(payload.knowledge_tags),
       note: payload.note || ''
     })
     .select()

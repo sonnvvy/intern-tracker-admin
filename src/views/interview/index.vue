@@ -141,7 +141,13 @@ const rules: FormRules<typeof form> = {
 
 const filteredList = computed(() => interviewStore.list)
 
-const allTagOptions = computed(() => [...new Set(interviewStore.list.flatMap((item) => item.questionTags))])
+const allTagOptions = computed(() => [
+  ...new Set(
+    interviewStore.list.flatMap((item) =>
+      Array.isArray(item.questionTags) ? item.questionTags : []
+    )
+  )
+])
 
 function handleFilterFieldChange(payload: { key: string; value: string | number | boolean | null | undefined }) {
   if (payload.key === 'keyword') {

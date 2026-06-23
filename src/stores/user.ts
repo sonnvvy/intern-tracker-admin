@@ -45,7 +45,7 @@ export const useUserStore = defineStore('user', () => {
     const { session, user } = await apiLogin({ username, password })
 
     if (!session || !user) {
-      throw new Error('Supabase did not return a valid session')
+      throw new Error('未获取到有效登录会话，请先确认邮箱后重试')
     }
 
     token.value = session.access_token

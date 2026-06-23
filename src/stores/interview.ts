@@ -20,7 +20,8 @@ export const useInterviewStore = defineStore('interview', () => {
   const tagFrequency = computed(() => {
     const map = new Map<string, number>()
     list.value.forEach((item) => {
-      item.questionTags.forEach((tag) => map.set(tag, (map.get(tag) || 0) + 1))
+      const tags = Array.isArray(item.questionTags) ? item.questionTags : []
+      tags.forEach((tag) => map.set(tag, (map.get(tag) || 0) + 1))
     })
     return [...map.entries()]
       .sort((a, b) => b[1] - a[1])

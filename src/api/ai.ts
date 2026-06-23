@@ -105,20 +105,36 @@ export async function analyzeResume(resumeText: string): Promise<any> {
   }
 }
 
-export async function askInterviewQuestion(question: string): Promise<ChatAssistantResult> {
-  const q = question.trim()
-  if (!q) {
+interface InterviewChatResponse {
+  answer?: string
+}
+
+export async function askInterviewQuestion(question: string, context = ''): Promise<ChatAssistantResult> {
+  const message = question.trim()
+  if (!message) {
     throw createAppError('business', '问题不能为空')
   }
 
   try {
-    const { data } = await vercelAiClient.post<ApiEnvelope<ChatAssistantResult>>('/ai/interview-chat', { question: q })
-    return resolveEnvelopeData(data, '面试问答请求失败，请稍后重试')
+    const { data } = await vercelAiClient.post<InterviewChatResponse>('/ai/interview-chat', {
+      message,
+      ...(context.trim() ? { context: context.trim() } : {})
+    })
+    const answer = data.answer?.trim()
+    if (!answer) {
+      throw createAppError('system', 'AI 服务未返回有效回答')
+    }
+
+    return {
+      answer,
+      keyPoints: [],
+      followUps: [],
+      confidence: 'medium'
+    }
   } catch (error) {
     throw toAppError(error, '面试问答请求失败，请稍后重试')
   }
 }
-
 export async function analyzeJobMatch(payload: { jd: string; resumeText: string }): Promise<JobAdviceResult> {
   const jd = payload.jd.trim()
   const resumeText = payload.resumeText.trim()
