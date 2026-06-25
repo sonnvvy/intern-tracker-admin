@@ -8,6 +8,7 @@ import {
   sendOk
 } from '../_lib/http'
 import type { ApiRequest, ApiResponse } from '../_lib/http'
+import { resolveLlmConfig, toChatCompletionsUrl } from '../_lib/llm-config'
 
 interface JobMatchRequestBody {
   jd?: string
@@ -30,12 +31,6 @@ interface ChatCompletionResponse {
   }>
 }
 
-interface LlmConfig {
-  apiKey: string
-  apiUrl: string
-  model: string
-}
-
 const JOB_MATCH_PROMPT = [
   '你是专业的岗位匹配分析助手。',
   '请结合岗位 JD 和候选人简历内容，返回结构化 JSON，字段必须包含：',
@@ -46,7 +41,6 @@ const JOB_MATCH_PROMPT = [
   'summary: string（综合结论）',
   '只返回 JSON，不要额外解释。'
 ].join('\n')
-
 function sendError(res: ApiResponse, status: number, message: string): void {
   const code = status >= 500 ? API_CODE_SYSTEM : API_CODE_BUSINESS
   sendFail(res, status, code, message)
@@ -192,34 +186,6 @@ function normalizeJobMatchResult(value: unknown, rawText: string): JobMatchResul
     interviewPrep: toStringArray(payload.interviewPrep),
     summary
   }
-}
-
-function resolveLlmConfig(): LlmConfig | null {
-  const nodeProcKey = 'proc' + 'ess'
-  const env =
-    ((globalThis as Record<string, unknown>)[nodeProcKey] as { env?: Record<string, string | undefined> } | undefined)
-      ?.env || {}
-
-  const apiKey = env.LLM_API_KEY || env.DEEPSEEK_API_KEY || env.OPENAI_API_KEY || ''
-  const apiUrl = env.LLM_API_URL || env.DEEPSEEK_BASE_URL || env.OPENAI_BASE_URL || ''
-  const model = env.LLM_MODEL || env.DEEPSEEK_MODEL || env.OPENAI_MODEL || ''
-
-  if (!apiKey || !apiUrl || !model) {
-    return null
-  }
-
-  return { apiKey, apiUrl, model }
-}
-
-function toChatCompletionsUrl(apiUrl: string): string {
-  const parsed = new URL(apiUrl)
-  const normalizedPath = parsed.pathname.replace(/\/+$/, '')
-  if (normalizedPath.endsWith('/chat/completions')) {
-    return parsed.toString()
-  }
-
-  parsed.pathname = `${normalizedPath}/chat/completions`
-  return parsed.toString()
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {

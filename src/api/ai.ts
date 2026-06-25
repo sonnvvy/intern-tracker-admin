@@ -19,11 +19,7 @@ const vercelAiClient = axios.create({
   baseURL: '/api'
 })
 
-/**
- * 为 axios 实例添加请求和响应拦截器
- */
 function setupInterceptors(instance: typeof apiClient | typeof vercelAiClient) {
-  // 请求拦截器：自动附加 token
   instance.interceptors.request.use(
     config => {
       const token = getToken()
@@ -37,20 +33,14 @@ function setupInterceptors(instance: typeof apiClient | typeof vercelAiClient) {
     }
   )
 
-  // 响应拦截器：处理 401 未授权
   instance.interceptors.response.use(
     response => response,
     async error => {
       if (error.response?.status === 401) {
-        // 动态导入以避免循环依赖
         const { useUserStore } = await import('@/stores/user')
-
         const userStore = useUserStore()
 
-        // 清空登录状态
         userStore.clearToken()
-
-        // 跳转到登录页
         router.push('/login')
       }
 
@@ -59,7 +49,6 @@ function setupInterceptors(instance: typeof apiClient | typeof vercelAiClient) {
   )
 }
 
-// 为两个实例设置拦截器
 setupInterceptors(apiClient)
 setupInterceptors(vercelAiClient)
 
@@ -107,6 +96,23 @@ export async function analyzeResume(resumeText: string): Promise<any> {
 
 interface InterviewChatResponse {
   answer?: string
+  keyPoints?: string[]
+  followUps?: string[]
+  confidence?: 'low' | 'medium' | 'high'
+}
+
+function normalizeInterviewResult(value: InterviewChatResponse): ChatAssistantResult {
+  const answer = value.answer?.trim()
+  if (!answer) {
+    throw createAppError('system', 'AI 服务未返回有效回答')
+  }
+
+  return {
+    answer,
+    keyPoints: Array.isArray(value.keyPoints) ? value.keyPoints : [],
+    followUps: Array.isArray(value.followUps) ? value.followUps : [],
+    confidence: value.confidence || 'medium'
+  }
 }
 
 export async function askInterviewQuestion(question: string, context = ''): Promise<ChatAssistantResult> {
@@ -116,25 +122,25 @@ export async function askInterviewQuestion(question: string, context = ''): Prom
   }
 
   try {
-    const { data } = await vercelAiClient.post<InterviewChatResponse>('/ai/interview-chat', {
-      message,
-      ...(context.trim() ? { context: context.trim() } : {})
-    })
-    const answer = data.answer?.trim()
-    if (!answer) {
-      throw createAppError('system', 'AI 服务未返回有效回答')
-    }
+    const { data } = await vercelAiClient.post<ApiEnvelope<InterviewChatResponse> | InterviewChatResponse>(
+      '/ai/interview-chat',
+      {
+        message,
+        ...(context.trim() ? { context: context.trim() } : {})
+      }
+    )
 
-    return {
-      answer,
-      keyPoints: [],
-      followUps: [],
-      confidence: 'medium'
-    }
+    const payload =
+      'data' in data || 'code' in data || 'success' in data
+        ? resolveEnvelopeData(data as ApiEnvelope<InterviewChatResponse>, '面试问答请求失败，请稍后重试')
+        : (data as InterviewChatResponse)
+
+    return normalizeInterviewResult(payload)
   } catch (error) {
     throw toAppError(error, '面试问答请求失败，请稍后重试')
   }
 }
+
 export async function analyzeJobMatch(payload: { jd: string; resumeText: string }): Promise<JobAdviceResult> {
   const jd = payload.jd.trim()
   const resumeText = payload.resumeText.trim()

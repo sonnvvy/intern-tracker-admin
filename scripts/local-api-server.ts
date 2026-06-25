@@ -111,7 +111,6 @@ const resumeAnalysisPrompt = ChatPromptTemplate.fromMessages([
     ].join('\n\n')
   ]
 ])
-
 function sendJson(res: import('node:http').ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -141,7 +140,12 @@ const server = createServer(async (req, res) => {
 
     if (req.method === 'POST' && (req.url === '/api/ai/interview-chat' || req.url === '/api/chat')) {
       const body = await readJsonBody(req)
-      const question = typeof body.question === 'string' ? body.question.trim() : ''
+      const question =
+        typeof body.question === 'string'
+          ? body.question.trim()
+          : typeof body.message === 'string'
+            ? body.message.trim()
+            : ''
       if (!question) {
         sendJson(res, 400, { message: 'question is required' })
         return

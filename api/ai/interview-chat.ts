@@ -1,5 +1,14 @@
-import { handlePreflight, parseJsonBody, setJsonHeaders } from '../_lib/http'
+import {
+  API_CODE_BUSINESS,
+  API_CODE_SYSTEM,
+  API_CODE_UPSTREAM,
+  handlePreflight,
+  parseJsonBody,
+  sendFail,
+  sendOk
+} from '../_lib/http'
 import type { ApiRequest, ApiResponse } from '../_lib/http'
+import { resolveLlmConfig, toChatCompletionsUrl } from '../_lib/llm-config'
 
 interface InterviewChatRequestBody {
   message?: unknown
@@ -14,13 +23,9 @@ interface ChatCompletionResponse {
   }>
 }
 
-const SYSTEM_PROMPT = '你是一个面试复盘与前端求职助手。'
+const SYSTEM_PROMPT =
+  'You are an interview coaching and job-search assistant. Answer in concise, practical Chinese.'
 const REQUEST_TIMEOUT_MS = 30_000
-
-function sendJson(res: ApiResponse, status: number, body: unknown): void {
-  setJsonHeaders(res)
-  res.status(status).json(body)
-}
 
 function normalizeContent(content: unknown): string {
   if (typeof content === 'string') return content.trim()
@@ -48,14 +53,14 @@ function normalizeContent(content: unknown): string {
 
 function buildUserMessage(message: string, context: string): string {
   if (!context) return message
-  return `参考上下文：\n${context}\n\n用户问题：\n${message}`
+  return ['参考上下文：', context, '', '用户问题：', message].join('\n')
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
   if (handlePreflight(req, res)) return
 
   if (String(req.method || '').toUpperCase() !== 'POST') {
-    sendJson(res, 405, { error: 'Method Not Allowed' })
+    sendFail(res, 405, API_CODE_BUSINESS, 'Method Not Allowed')
     return
   }
 
@@ -63,7 +68,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
   try {
     body = await parseJsonBody<InterviewChatRequestBody>(req)
   } catch {
-    sendJson(res, 400, { error: '请求体必须是有效的 JSON' })
+    sendFail(res, 400, API_CODE_BUSINESS, 'Request body must be valid JSON')
     return
   }
 
@@ -71,16 +76,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
   const context = typeof body.context === 'string' ? body.context.trim() : ''
 
   if (!message) {
-    sendJson(res, 400, { error: 'message 不能为空' })
+    sendFail(res, 400, API_CODE_BUSINESS, 'message is required')
     return
   }
 
-  const apiUrl = process.env.LLM_API_URL?.trim()
-  const apiKey = process.env.LLM_API_KEY?.trim()
-  const model = process.env.LLM_MODEL?.trim()
+  const llmConfig = resolveLlmConfig()
+  if (!llmConfig) {
+    sendFail(res, 500, API_CODE_SYSTEM, 'Missing required server environment variables for LLM')
+    return
+  }
 
-  if (!apiUrl || !apiKey || !model) {
-    sendJson(res, 500, { error: '服务端缺少 LLM_API_URL、LLM_API_KEY 或 LLM_MODEL 配置' })
+  let validatedApiUrl: string
+  try {
+    validatedApiUrl = toChatCompletionsUrl(llmConfig.apiUrl)
+  } catch {
+    sendFail(res, 500, API_CODE_SYSTEM, 'Invalid LLM API URL')
     return
   }
 
@@ -88,18 +98,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
   try {
-    const upstreamResponse = await fetch(apiUrl, {
+    const upstreamResponse = await fetch(validatedApiUrl, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${llmConfig.apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model,
+        model: llmConfig.model,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: buildUserMessage(message, context) }
-        ]
+        ],
+        temperature: 0.3
       }),
       signal: controller.signal
     })
@@ -113,20 +124,26 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     }
 
     if (!upstreamResponse.ok) {
-      sendJson(res, 502, { error: `LLM 服务请求失败（${upstreamResponse.status}）` })
+      const detail = rawResponse.slice(0, 500)
+      sendFail(
+        res,
+        502,
+        API_CODE_UPSTREAM,
+        'LLM API request failed with status ' + upstreamResponse.status + ': ' + (detail || 'Unknown error')
+      )
       return
     }
 
     const answer = normalizeContent(responseData?.choices?.[0]?.message?.content)
     if (!answer) {
-      sendJson(res, 502, { error: 'LLM 服务未返回有效回答' })
+      sendFail(res, 502, API_CODE_UPSTREAM, 'LLM service returned an empty answer')
       return
     }
 
-    sendJson(res, 200, { answer })
+    sendOk(res, { answer })
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === 'AbortError'
-    sendJson(res, 502, { error: isTimeout ? 'LLM 服务响应超时' : '无法连接 LLM 服务' })
+    sendFail(res, 502, API_CODE_UPSTREAM, isTimeout ? 'LLM request timeout' : 'Failed to call LLM service')
   } finally {
     clearTimeout(timeoutId)
   }
