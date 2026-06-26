@@ -1,11 +1,24 @@
 import { config as loadEnv } from 'dotenv'
 import { createServer } from 'node:http'
-import { ChatPromptTemplate } from '@langchain/core/prompts'
-import { createChatModel } from '../api/_lib/langchain'
-import { chatAssistantPrompt, jobAdvicePrompt } from '../api/_lib/prompts'
-import { chatAssistantSchema, jobAdviceSchema } from '../api/_lib/schemas'
-import { invokeJsonWithSchema } from '../api/_lib/structured-output'
+import { ReadableStream, TransformStream } from 'node:stream/web'
 import { z } from 'zod'
+
+const webStreamGlobals = globalThis as Record<string, unknown>
+
+webStreamGlobals.ReadableStream ??= ReadableStream
+webStreamGlobals.TransformStream ??= TransformStream
+
+const [{ ChatPromptTemplate }, { createChatModel }, prompts, schemas, structuredOutput] = await Promise.all([
+  import('@langchain/core/prompts'),
+  import('../api/_lib/langchain'),
+  import('../api/_lib/prompts'),
+  import('../api/_lib/schemas'),
+  import('../api/_lib/structured-output')
+])
+
+const { chatAssistantPrompt, jobAdvicePrompt } = prompts
+const { chatAssistantSchema, jobAdviceSchema } = schemas
+const { invokeJsonWithSchema } = structuredOutput
 
 // Prefer .env.local for local development, then fallback to .env
 loadEnv({ path: '.env.local' })
@@ -100,14 +113,14 @@ function normalizeResumeAnalysisResult(value: unknown) {
 const resumeAnalysisPrompt = ChatPromptTemplate.fromMessages([
   [
     'system',
-    '你是专业的简历分析助手，请提取技能、项目亮点、优势、待优化点，并尽量返回结构化 JSON。'
+    'You are a professional resume analysis assistant. Extract skills, project highlights, strengths, gaps, and return structured JSON whenever possible.'
   ],
   [
     'human',
     [
-      '简历文本：\n{resumeText}',
-      '请只输出 JSON，不要 markdown，不要代码块。',
-      '字段必须是：name, education, major, skills, projects, internships, jobDirections, advice。'
+      'Resume text:\n{resumeText}',
+      'Return JSON only. Do not use markdown or code fences.',
+      'Required fields: name, education, major, skills, projects, internships, jobDirections, advice.'
     ].join('\n\n')
   ]
 ])

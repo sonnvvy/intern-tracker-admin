@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "api": "tsx scripts/local-api-server.ts",
     "dev:api": "tsx watch scripts/local-api-server.ts",
     "dev:api:vercel": "vercel dev --listen 3000 --yes",
     "vercel:link": "vercel link --yes",
