@@ -8,13 +8,18 @@ import {
 } from '@/api/interview'
 import type { InterviewItem, InterviewResult } from '@/types'
 
+const PENDING_START = '待开始' as InterviewResult
+const PASSED = '通过' as InterviewResult
+const FAILED = '未通过' as InterviewResult
+const PENDING_NOTICE = '待通知' as InterviewResult
+
 export const useInterviewStore = defineStore('interview', () => {
   const list = ref<InterviewItem[]>([])
   const loading = ref(false)
   let latestRequestId = 0
 
   const upcomingCount = computed(
-    () => list.value.filter((item) => item.result === '待开始' || item.result === '待通知').length
+    () => list.value.filter((item) => item.result === PENDING_START || item.result === PENDING_NOTICE).length
   )
 
   const tagFrequency = computed(() => {
@@ -32,6 +37,7 @@ export const useInterviewStore = defineStore('interview', () => {
   async function fetchInterviews(params?: FetchInterviewsParams) {
     const requestId = ++latestRequestId
     loading.value = true
+    list.value = []
     try {
       const data = await fetchInterviewsRequest(params)
       if (requestId === latestRequestId) list.value = data
@@ -47,14 +53,20 @@ export const useInterviewStore = defineStore('interview', () => {
     return created
   }
 
+  function clearInterviews() {
+    latestRequestId += 1
+    list.value = []
+    loading.value = false
+  }
+
   function getResultTagType(result: InterviewResult) {
-    const map: Record<InterviewResult, 'info' | 'success' | 'danger' | 'warning'> = {
-      待开始: 'info',
-      通过: 'success',
-      未通过: 'danger',
-      待通知: 'warning'
+    const map: Record<string, 'info' | 'success' | 'danger' | 'warning'> = {
+      [PENDING_START]: 'info',
+      [PASSED]: 'success',
+      [FAILED]: 'danger',
+      [PENDING_NOTICE]: 'warning'
     }
-    return map[result]
+    return map[String(result)] || 'info'
   }
 
   return {
@@ -64,6 +76,7 @@ export const useInterviewStore = defineStore('interview', () => {
     tagFrequency,
     fetchInterviews,
     addInterview,
+    clearInterviews,
     getResultTagType
   }
 })

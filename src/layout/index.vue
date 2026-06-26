@@ -94,12 +94,16 @@ import { DataAnalysis, Document, Expand, House, Memo, Menu, Tickets } from '@ele
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useUserStore } from '@/stores/user'
+import { useDeliveryStore } from '@/stores/delivery'
+import { useInterviewStore } from '@/stores/interview'
 import { throttle } from '@/utils/performance'
 
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const userStore = useUserStore()
+const deliveryStore = useDeliveryStore()
+const interviewStore = useInterviewStore()
 
 const activeMenu = computed(() => route.path)
 const isMobile = ref(false)
@@ -125,6 +129,8 @@ async function handleLogout() {
   try {
     await userStore.logout()
   } finally {
+    deliveryStore.clearDeliveries()
+    interviewStore.clearInterviews()
     router.push('/login')
   }
 }

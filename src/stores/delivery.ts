@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { deliverySeeds } from '@/api/mock'
+import { fetchDeliveries as fetchDeliveriesRequest, type FetchDeliveriesParams } from '@/api/delivery'
 import {
   JOB_STATUS,
   canTransfer,
@@ -17,20 +17,16 @@ import type {
   TodoItem
 } from '@/types'
 
-const STORAGE_KEY = 'intern-admin-deliveries'
-
-function loadInitialData(): DeliveryItem[] {
-  const cache = localStorage.getItem(STORAGE_KEY)
-  const source = cache ? JSON.parse(cache) : deliverySeeds
-  return source.map((item: DeliveryItem) => ({
-    ...item,
-    status: normalizeJobStatus(item.status),
-    followUps: item.followUps || []
-  }))
-}
+const HIGH_PRIORITY = '高优先级' as PriorityLevel
+const URGENT_LEVEL = '紧急' as TodoItem['level']
+const PRIORITY_LEVEL = '优先' as TodoItem['level']
+const NORMAL_LEVEL = '常规' as TodoItem['level']
 
 export const useDeliveryStore = defineStore('delivery', () => {
-  const list = ref<DeliveryItem[]>(loadInitialData())
+  const list = ref<DeliveryItem[]>([])
+  const loading = ref(false)
+  let latestRequestId = 0
+
   const interviewingStatuses: DeliveryStatus[] = [
     JOB_STATUS.WRITTEN_TEST,
     JOB_STATUS.FIRST_INTERVIEW,
@@ -65,23 +61,23 @@ export const useDeliveryStore = defineStore('delivery', () => {
     interviewing: list.value.filter((item) => interviewingStatuses.includes(item.status)).length,
     offered: list.value.filter((item) => offeredStatuses.includes(item.status)).length,
     rejected: list.value.filter((item) => item.status === JOB_STATUS.REJECTED).length,
-    upcomingInterview: list.value.filter((item) =>
-      item.nextStep.includes('面试') ||
-      interviewingStatuses.includes(item.status)
-    ).length
+    upcomingInterview: list.value.filter((item) => interviewingStatuses.includes(item.status)).length
   }))
 
-  const highPriorityCount = computed(
-    () => list.value.filter((item) => item.priority === '高优先级').length
-  )
+  const highPriorityCount = computed(() => list.value.filter((item) => item.priority === HIGH_PRIORITY).length)
 
   const todoList = computed<TodoItem[]>(() => {
-    const levelWeight: Record<TodoItem['level'], number> = { 紧急: 3, 优先: 2, 常规: 1 }
+    const levelWeight = new Map<TodoItem['level'], number>([
+      [URGENT_LEVEL, 3],
+      [PRIORITY_LEVEL, 2],
+      [NORMAL_LEVEL, 1]
+    ])
+
     return list.value
       .map((item) => {
-        let level: TodoItem['level'] = '常规'
-        if (item.priority === '高优先级' && interviewingStatuses.includes(item.status)) level = '紧急'
-        else if (item.priority === '高优先级' || interviewingStatuses.includes(item.status)) level = '优先'
+        let level = NORMAL_LEVEL
+        if (item.priority === HIGH_PRIORITY && interviewingStatuses.includes(item.status)) level = URGENT_LEVEL
+        else if (item.priority === HIGH_PRIORITY || interviewingStatuses.includes(item.status)) level = PRIORITY_LEVEL
         return {
           id: item.id,
           title: `${item.companyName} · ${item.jobTitle}`,
@@ -89,16 +85,41 @@ export const useDeliveryStore = defineStore('delivery', () => {
           level
         }
       })
-      .sort((a, b) => levelWeight[b.level] - levelWeight[a.level])
+      .sort((a, b) => (levelWeight.get(b.level) || 0) - (levelWeight.get(a.level) || 0))
       .slice(0, 4)
   })
 
   function persist() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list.value))
+    localStorage.removeItem('intern-admin-deliveries')
   }
 
   function setDeliveries(payload: DeliveryItem[]) {
-    list.value = payload
+    list.value = payload.map((item) => ({
+      ...item,
+      status: normalizeJobStatus(item.status),
+      followUps: item.followUps || []
+    }))
+    persist()
+  }
+
+  async function fetchDeliveries(params?: FetchDeliveriesParams) {
+    const requestId = ++latestRequestId
+    loading.value = true
+    list.value = []
+    try {
+      const result = await fetchDeliveriesRequest(params)
+      if (requestId === latestRequestId) setDeliveries(result.list)
+      return result
+    } finally {
+      if (requestId === latestRequestId) loading.value = false
+    }
+  }
+
+  function clearDeliveries() {
+    latestRequestId += 1
+    list.value = []
+    loading.value = false
+    persist()
   }
 
   function addDelivery(payload: Omit<DeliveryItem, 'id' | 'deliveryDate' | 'followUps'>) {
@@ -162,16 +183,13 @@ export const useDeliveryStore = defineStore('delivery', () => {
   }
 
   function getPriorityTagType(priority: PriorityLevel) {
-    const map: Record<PriorityLevel, 'danger' | 'warning' | 'success'> = {
-      高优先级: 'danger',
-      正常跟进: 'warning',
-      保底机会: 'success'
-    }
-    return map[priority]
+    if (priority === HIGH_PRIORITY) return 'danger'
+    return 'warning'
   }
 
   return {
     list,
+    loading,
     total,
     statusChartData,
     trendChartData,
@@ -179,6 +197,8 @@ export const useDeliveryStore = defineStore('delivery', () => {
     highPriorityCount,
     todoList,
     setDeliveries,
+    fetchDeliveries,
+    clearDeliveries,
     addDelivery,
     updateDelivery,
     removeDelivery,

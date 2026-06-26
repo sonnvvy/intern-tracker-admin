@@ -12,7 +12,7 @@
       </div>
     </div>
 
-    <div class="stats-grid">
+    <div class="stats-grid" v-loading="dashboardLoading">
       <StatCard
         v-for="item in statCards"
         :key="item.label"
@@ -29,7 +29,7 @@
         <div class="card-head">
           <div>
             <div class="section-title">当前投递状态分布</div>
-            <div class="section-desc">按岗位状态聚合统计，快速看清推进结构</div>
+            <div class="section-desc">按当前 Supabase 数据聚合统计，快速看清推进结构</div>
           </div>
         </div>
         <div v-if="chartLoading" class="chart-skeleton-wrap">
@@ -56,7 +56,7 @@
         <div class="card-head">
           <div>
             <div class="section-title">最近待处理事项</div>
-            <div class="section-desc">根据投递记录中的下一步动作自动生成</div>
+            <div class="section-desc">根据当前用户投递记录中的下一步动作自动生成</div>
           </div>
         </div>
         <el-skeleton v-if="listLoading" animated :rows="4" />
@@ -66,7 +66,7 @@
             <div class="todo-title">{{ item.title }}</div>
             <div class="todo-hint">{{ item.hint }}</div>
           </div>
-          <el-tag :type="todoTagType[item.level]">{{ item.level }}</el-tag>
+          <el-tag :type="todoTagType[item.level] || 'info'">{{ item.level }}</el-tag>
         </div>
       </div>
 
@@ -74,7 +74,7 @@
         <div class="card-head">
           <div>
             <div class="section-title">最近投递记录</div>
-            <div class="section-desc">展示最近处理过的岗位，方便快速回看</div>
+            <div class="section-desc">展示当前用户最近处理过的岗位，方便快速回看</div>
           </div>
         </div>
         <el-skeleton v-if="listLoading" animated :rows="4" />
@@ -92,7 +92,7 @@
         <div class="card-head">
           <div>
             <div class="section-title">高频知识点</div>
-            <div class="section-desc">来自面试复盘页的 questionTags 统计</div>
+            <div class="section-desc">来自当前用户面试复盘页的 questionTags 统计</div>
           </div>
         </div>
         <div class="skill-tags">
@@ -101,7 +101,7 @@
           </el-tag>
         </div>
         <div class="tips-card">
-          这一块的数据来自复盘记录，用来提示自己下一轮应重点复习 Vue3、状态管理和组件封装等高频知识点。
+          这一块的数据来自当前登录用户的复盘记录，用来提示自己下一轮应重点复习的高频知识点。
         </div>
       </div>
     </div>
@@ -128,11 +128,12 @@ const statusChartRef = ref<HTMLElement | null>(null)
 const trendChartRef = ref<HTMLElement | null>(null)
 const chartLoading = ref(true)
 const listLoading = ref(true)
+const dashboardLoading = computed(() => chartLoading.value || listLoading.value)
 let echartsModule: EchartsModule | null = null
 let statusChart: import('echarts').ECharts | null = null
 let trendChart: import('echarts').ECharts | null = null
 
-const todoTagType: Record<'紧急' | '优先' | '常规', 'danger' | 'warning' | 'info'> = {
+const todoTagType: Record<string, 'danger' | 'warning' | 'info'> = {
   紧急: 'danger',
   优先: 'warning',
   常规: 'info'
@@ -212,14 +213,26 @@ watch(
 )
 
 onMounted(async () => {
-  chartLoading.value = false
+  chartLoading.value = true
+  listLoading.value = true
+
+  try {
+    await Promise.all([
+      deliveryStore.fetchDeliveries({ page: 1, pageSize: 1000 }),
+      interviewStore.fetchInterviews()
+    ])
+  } catch (error) {
+    deliveryStore.clearDeliveries()
+    interviewStore.clearInterviews()
+    console.error('[dashboard] failed to load current user data', error)
+  } finally {
+    chartLoading.value = false
+    listLoading.value = false
+  }
+
   await nextTick()
   await renderStatusChart()
   await renderTrendChart()
-  // 列表骨架只在首屏短暂显示，减少“白屏感”。
-  window.setTimeout(() => {
-    listLoading.value = false
-  }, 320)
   window.addEventListener('resize', handleResize)
 })
 

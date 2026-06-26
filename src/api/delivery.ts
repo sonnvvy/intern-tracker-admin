@@ -1,4 +1,4 @@
-import type { DeliveryItem } from '@/types'
+import type { DeliveryItem, PriorityLevel } from '@/types'
 import { supabase } from '@/api/supabase'
 import { JOB_STATUS, normalizeJobStatus } from '@/utils/statusMachine'
 
@@ -24,7 +24,7 @@ export interface SaveDeliveryPayload {
   note?: string
 }
 
-interface FetchDeliveriesParams {
+export interface FetchDeliveriesParams {
   keyword?: string
   status?: string
   page?: number
@@ -37,6 +37,8 @@ export interface FetchDeliveriesResult {
   page: number
   pageSize: number
 }
+
+const DEFAULT_PRIORITY = '正常跟进' as PriorityLevel
 
 function formatDeliveryDate(value?: string | Date | null): string {
   if (!value) return new Date().toISOString().slice(0, 10)
@@ -58,7 +60,7 @@ function mapDeliveryRow(item: DeliveryRow): DeliveryItem {
     status: normalizeJobStatus(item.status || JOB_STATUS.APPLIED),
     deliveryDate: formatDeliveryDate(item.apply_date || item.created_at),
     city: item.city || '-',
-    priority: '正常跟进',
+    priority: DEFAULT_PRIORITY,
     nextStep: '等待后续进展',
     remark: item.note || '',
     followUps: [

@@ -150,10 +150,14 @@ import { User, Lock, View, Hide } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { register } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
+import { useDeliveryStore } from '@/stores/delivery'
+import { useInterviewStore } from '@/stores/interview'
 import { getRedirectPath } from '@/router'
 
 const router = useRouter()
 const userStore = useUserStore()
+const deliveryStore = useDeliveryStore()
+const interviewStore = useInterviewStore()
 const loginFormRef = ref<FormInstance>()
 const registerFormRef = ref<FormInstance>()
 
@@ -278,6 +282,10 @@ async function handleLogin() {
 
   try {
     await userStore.login(loginForm.username.toLowerCase(), loginForm.password)
+    await Promise.all([
+      deliveryStore.fetchDeliveries({ page: 1, pageSize: 1000 }),
+      interviewStore.fetchInterviews()
+    ])
     ElMessage.success('登录成功')
     router.push(getRedirectPath())
   } catch (err) {
