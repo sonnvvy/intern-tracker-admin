@@ -1,5 +1,6 @@
 import { API_CODE_BUSINESS, API_CODE_SYSTEM, API_CODE_UPSTREAM } from '../http.js'
 import { LLMClient, LLMConfigurationError } from './llm-client.js'
+import type { ChatMessage } from './llm-client.js'
 import { processAIOutput } from './pipeline.js'
 import type { ProcessedAIOutput } from './formatter.js'
 import { interviewPrompt } from './prompts/interview.js'
@@ -150,7 +151,7 @@ export class AIService {
     this.llmClient = llmClient
   }
 
-  async interviewChat(question: unknown, context?: unknown): Promise<InterviewChatResult> {
+  private async buildInterviewMessages(question: unknown, context?: unknown): Promise<ChatMessage[]> {
     const message = asTrimmedString(question)
     const localContext = asTrimmedString(context)
 
@@ -158,23 +159,32 @@ export class AIService {
       throw businessError('message is required')
     }
 
+    const ragContext = await getContext(message)
+    const contextBlocks = [localContext, ragContext].filter(Boolean).join('\n\n')
+    const userContent = contextBlocks
+      ? ['参考上下文：', contextBlocks, '', '用户问题：', message].join('\n')
+      : message
+
+    return [
+      { role: 'system', content: interviewPrompt },
+      { role: 'user', content: userContent }
+    ]
+  }
+
+  async interviewChat(question: unknown, context?: unknown): Promise<InterviewChatResult> {
     try {
-      const ragContext = await getContext(message)
-      const contextBlocks = [localContext, ragContext].filter(Boolean).join('\n\n')
-      const userContent = contextBlocks
-        ? ['参考上下文：', contextBlocks, '', '用户问题：', message].join('\n')
-        : message
-
-      const result = await this.llmClient.chat(
-        [
-          { role: 'system', content: interviewPrompt },
-          { role: 'user', content: userContent }
-        ],
-        { temperature: 0.3 }
-      )
-
+      const result = await this.llmClient.chat(await this.buildInterviewMessages(question, context), { temperature: 0.3 })
       const output = processAIOutput(result.content)
       return { answer: getProcessedText(output) || output.error || EMPTY_ANSWER_FALLBACK }
+    } catch (error) {
+      throw toServiceError(error)
+    }
+  }
+
+  async *interviewChatStream(question: unknown, context?: unknown): AsyncGenerator<string> {
+    try {
+      const messages = await this.buildInterviewMessages(question, context)
+      yield* this.llmClient.chatStream(messages, { temperature: 0.3 })
     } catch (error) {
       throw toServiceError(error)
     }

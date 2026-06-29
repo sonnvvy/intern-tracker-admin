@@ -17,7 +17,7 @@
             placeholder="例如：请帮我回答 Vue 响应式原理"
           />
           <div class="action-row">
-            <el-button type="primary" :loading="chatLoading" @click="onAskQuestion">生成回答建议</el-button>
+            <el-button type="primary" :loading="chatLoading" @click="onAskQuestion">{{ chatLoading ? '生成中' : '生成回答建议' }}</el-button>
           </div>
 
           <div v-if="chatResult" class="result-box">
@@ -96,7 +96,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { analyzeJobMatch, askInterviewQuestion } from '@/api/ai'
+import { analyzeJobMatch, askInterviewQuestionStream } from '@/api/ai'
 import { getErrorDisplayMessage } from '@/api/error'
 import { renderMarkdownContent } from '@/utils/markdown'
 import type { ChatAssistantResult, JobAdviceResult } from '@/types'
@@ -121,9 +121,21 @@ async function onAskQuestion() {
   }
 
   chatLoading.value = true
+  chatResult.value = {
+    answer: '',
+    keyPoints: [],
+    followUps: [],
+    confidence: 'medium'
+  }
+
   try {
-    chatResult.value = await askInterviewQuestion(q)
+    chatResult.value = await askInterviewQuestionStream(q, answer => {
+      if (chatResult.value) {
+        chatResult.value.answer = answer
+      }
+    })
   } catch (error) {
+    chatResult.value = null
     const message = getErrorDisplayMessage(error, '生成失败，请稍后再试')
     ElMessage.error(message)
   } finally {

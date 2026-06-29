@@ -21,6 +21,14 @@ interface ChatCompletionResponse {
   }>
 }
 
+interface ChatCompletionStreamChunk {
+  choices?: Array<{
+    delta?: {
+      content?: unknown
+    }
+  }>
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000
 
 export class LLMConfigurationError extends Error {
@@ -93,6 +101,23 @@ function normalizeContent(content: unknown): string {
   return ''
 }
 
+function extractDeltaContent(chunk: unknown): string {
+  const content = (chunk as ChatCompletionStreamChunk | null)?.choices?.[0]?.delta?.content
+  return typeof content === 'string' ? content : ''
+}
+
+function parseStreamPayload(payload: string): string | null {
+  if (payload === '[DONE]') {
+    return null
+  }
+
+  try {
+    return extractDeltaContent(JSON.parse(payload) as unknown)
+  } catch {
+    return ''
+  }
+}
+
 export class LLMClient {
   private readonly apiKey: string
   private readonly baseUrl: string
@@ -144,6 +169,90 @@ export class LLMClient {
 
       const isTimeout = error instanceof Error && error.name === 'AbortError'
       throw new LLMRequestError(isTimeout ? 'LLM request timeout' : 'Failed to call LLM service')
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  async *chatStream(messages: ChatMessage[], options: LLMChatOptions = {}): AsyncGenerator<string> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+
+    try {
+      const res = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages,
+          stream: true,
+          ...(typeof options.temperature === 'number' ? { temperature: options.temperature } : {})
+        }),
+        signal: controller.signal
+      })
+
+      if (!res.ok) {
+        const detail = (await res.text()).slice(0, 500) || 'Unknown error'
+        throw new LLMRequestError('LLM API request failed with status ' + res.status + ': ' + detail, res.status)
+      }
+
+      if (!res.body) {
+        throw new LLMRequestError('LLM service returned an empty stream')
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) {
+          break
+        }
+
+        buffer += decoder.decode(value, { stream: true })
+        buffer = buffer.replace(/\r\n/g, '\n')
+        const events = buffer.split('\n\n')
+        buffer = events.pop() || ''
+
+        for (const event of events) {
+          const dataLines = event
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trim())
+
+          for (const payload of dataLines) {
+            const delta = parseStreamPayload(payload)
+            if (delta === null) {
+              return
+            }
+
+            if (delta) {
+              yield delta
+            }
+          }
+        }
+      }
+
+      const tail = buffer.trim()
+      if (tail) {
+        const payload = tail.startsWith('data:') ? tail.slice(5).trim() : tail
+        const delta = parseStreamPayload(payload)
+        if (delta) {
+          yield delta
+        }
+      }
+    } catch (error) {
+      if (error instanceof LLMRequestError) {
+        throw error
+      }
+
+      const isTimeout = error instanceof Error && error.name === 'AbortError'
+      throw new LLMRequestError(isTimeout ? 'LLM stream timeout' : 'Failed to stream LLM service')
     } finally {
       clearTimeout(timeoutId)
     }
