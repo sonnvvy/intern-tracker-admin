@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import jobMatchHandler from './ai/job-match'
+import jobMatchHandler from './ai/job-match.js'
 
 // Deprecated: use /api/ai/job-match instead.
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
