@@ -22,7 +22,7 @@
 
           <div v-if="chatResult" class="result-box">
             <div class="result-title">建议回答</div>
-            <p class="paragraph">{{ chatResult.answer }}</p>
+            <div class="markdown-body" v-html="chatAnswerHtml"></div>
 
             <div class="result-title">关键要点</div>
             <ul class="list">
@@ -94,10 +94,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { analyzeJobMatch, askInterviewQuestion } from '@/api/ai'
 import { getErrorDisplayMessage } from '@/api/error'
+import { renderMarkdownContent } from '@/utils/markdown'
 import type { ChatAssistantResult, JobAdviceResult } from '@/types'
 
 const activeTab = ref<'chat' | 'match'>('chat')
@@ -109,6 +110,8 @@ const chatLoading = ref(false)
 const jobLoading = ref(false)
 const chatResult = ref<ChatAssistantResult | null>(null)
 const jobResult = ref<JobAdviceResult | null>(null)
+
+const chatAnswerHtml = computed(() => renderMarkdownContent(chatResult.value))
 
 async function onAskQuestion() {
   const q = question.value.trim()
@@ -210,6 +213,92 @@ async function onAnalyzeJob() {
   line-height: 1.8;
 }
 
+.markdown-body {
+  color: #334155;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+
+  :deep(h1),
+  :deep(h2),
+  :deep(h3),
+  :deep(h4) {
+    margin: 10px 0 6px;
+    color: #0f172a;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  :deep(h1) {
+    font-size: 20px;
+  }
+
+  :deep(h2) {
+    font-size: 18px;
+  }
+
+  :deep(h3) {
+    font-size: 16px;
+  }
+
+  :deep(h4) {
+    font-size: 15px;
+  }
+
+  :deep(p) {
+    margin: 0 0 8px;
+  }
+
+  :deep(p:last-child) {
+    margin-bottom: 0;
+  }
+
+  :deep(ul),
+  :deep(ol) {
+    margin: 6px 0 8px;
+    padding-left: 20px;
+  }
+
+  :deep(li) {
+    margin: 3px 0;
+  }
+
+  :deep(strong) {
+    color: #0f172a;
+    font-weight: 700;
+  }
+
+  :deep(blockquote) {
+    margin: 8px 0;
+    padding: 6px 10px;
+    border-left: 3px solid #cbd5e1;
+    color: #475569;
+    background: #f1f5f9;
+  }
+
+  :deep(code) {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: #e2e8f0;
+    color: #0f172a;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 0.92em;
+  }
+
+  :deep(pre) {
+    margin: 8px 0;
+    padding: 10px;
+    overflow-x: auto;
+    border-radius: 6px;
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+
+  :deep(pre code) {
+    padding: 0;
+    background: transparent;
+    color: inherit;
+  }
+}
 .score-row {
   display: grid;
   gap: 6px;
