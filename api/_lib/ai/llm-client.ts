@@ -132,10 +132,6 @@ export class LLMClient {
       }
 
       const content = normalizeContent((raw as ChatCompletionResponse | null)?.choices?.[0]?.message?.content)
-      if (!content) {
-        throw new LLMRequestError('LLM service returned an empty answer')
-      }
-
       return { content, raw }
     } catch (error) {
       if (error instanceof LLMRequestError) {

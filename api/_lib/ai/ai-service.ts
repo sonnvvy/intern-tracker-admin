@@ -1,5 +1,7 @@
 import { API_CODE_BUSINESS, API_CODE_SYSTEM, API_CODE_UPSTREAM } from '../http.js'
 import { LLMClient, LLMConfigurationError } from './llm-client.js'
+import { processAIOutput } from './pipeline.js'
+import type { ProcessedAIOutput } from './formatter.js'
 import { interviewPrompt } from './prompts/interview.js'
 import { resumePrompt } from './prompts/resume.js'
 import { jobMatchPrompt } from './prompts/job.js'
@@ -35,6 +37,7 @@ export class AIServiceError extends Error {
 }
 
 const MAX_RESUME_TEXT_LENGTH = 20_000
+const EMPTY_ANSWER_FALLBACK = 'AI 服务暂时没有返回有效内容，请稍后重试。'
 
 function businessError(message: string): AIServiceError {
   return new AIServiceError(400, API_CODE_BUSINESS, message)
@@ -50,86 +53,6 @@ function upstreamError(message: string): AIServiceError {
 
 function asTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-function safeJsonParse(input: string): unknown | null {
-  try {
-    return JSON.parse(input)
-  } catch {
-    return null
-  }
-}
-
-function extractBalancedJsonObject(input: string): string | null {
-  const start = input.indexOf('{')
-  if (start === -1) {
-    return null
-  }
-
-  let depth = 0
-  let inString = false
-  let escaped = false
-
-  for (let i = start; i < input.length; i += 1) {
-    const ch = input[i]
-
-    if (escaped) {
-      escaped = false
-      continue
-    }
-
-    if (ch === '\\') {
-      escaped = true
-      continue
-    }
-
-    if (ch === '"') {
-      inString = !inString
-      continue
-    }
-
-    if (inString) {
-      continue
-    }
-
-    if (ch === '{') {
-      depth += 1
-    } else if (ch === '}') {
-      depth -= 1
-      if (depth === 0) {
-        return input.slice(start, i + 1)
-      }
-    }
-  }
-
-  return null
-}
-
-function tryParseModelJson(content: string): unknown | null {
-  const direct = safeJsonParse(content)
-  if (direct !== null) {
-    return direct
-  }
-
-  const fence = String.fromCharCode(96).repeat(3)
-  const fencedPattern = new RegExp(fence + '(?:json)?\\s*([\\s\\S]*?)\\s*' + fence, 'i')
-  const fencedMatch = content.match(fencedPattern)
-  if (fencedMatch?.[1]) {
-    const fencedParsed = safeJsonParse(fencedMatch[1])
-    if (fencedParsed !== null) {
-      return fencedParsed
-    }
-  }
-
-  const balanced = extractBalancedJsonObject(content)
-  if (balanced) {
-    const balancedParsed = safeJsonParse(balanced)
-    if (balancedParsed !== null) {
-      return balancedParsed
-    }
-  }
-
-  return null
 }
 
 function toStringArray(value: unknown): string[] {
@@ -151,6 +74,49 @@ function normalizeScore(value: unknown): number {
   return Math.max(0, Math.min(100, Math.round(score)))
 }
 
+function stringifySafe(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.trim()
+  }
+
+  if (value === null || typeof value === 'undefined') {
+    return ''
+  }
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return ''
+  }
+}
+
+function getProcessedText(output: ProcessedAIOutput): string {
+  if (typeof output.data === 'string') {
+    return output.data.trim()
+  }
+
+  if (output.data && typeof output.data === 'object' && 'answer' in output.data) {
+    const answer = (output.data as { answer?: unknown }).answer
+    if (typeof answer === 'string' && answer.trim()) {
+      return answer.trim()
+    }
+  }
+
+  return stringifySafe(output.data)
+}
+
+function normalizeResumeResult(output: ProcessedAIOutput): unknown {
+  if (output.success && output.data && typeof output.data === 'object') {
+    return output.data
+  }
+
+  const rawText = getProcessedText(output)
+  return {
+    rawText,
+    note: output.error || 'Model response is not standard JSON, fallback rawText is returned.'
+  }
+}
+
 function normalizeJobMatchResult(value: unknown, rawText: string): JobMatchResult {
   const payload = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
   const summary = typeof payload.summary === 'string' && payload.summary.trim() ? payload.summary.trim() : rawText
@@ -160,7 +126,7 @@ function normalizeJobMatchResult(value: unknown, rawText: string): JobMatchResul
     missingSkills: toStringArray(payload.missingSkills),
     resumeImprovements: toStringArray(payload.resumeImprovements),
     interviewPrep: toStringArray(payload.interviewPrep),
-    summary
+    summary: summary || EMPTY_ANSWER_FALLBACK
   }
 }
 
@@ -207,7 +173,8 @@ export class AIService {
         { temperature: 0.3 }
       )
 
-      return { answer: result.content }
+      const output = processAIOutput(result.content)
+      return { answer: getProcessedText(output) || output.error || EMPTY_ANSWER_FALLBACK }
     } catch (error) {
       throw toServiceError(error)
     }
@@ -233,13 +200,7 @@ export class AIService {
         { temperature: 0.2 }
       )
 
-      const parsedData = tryParseModelJson(result.content)
-      return parsedData !== null
-        ? parsedData
-        : {
-            rawText: result.content,
-            note: 'Model response is not standard JSON, fallback rawText is returned.'
-          }
+      return normalizeResumeResult(processAIOutput(result.content))
     } catch (error) {
       throw toServiceError(error)
     }
@@ -270,8 +231,8 @@ export class AIService {
         { temperature: 0.2 }
       )
 
-      const parsedData = tryParseModelJson(result.content)
-      return normalizeJobMatchResult(parsedData, result.content)
+      const output = processAIOutput(result.content)
+      return normalizeJobMatchResult(output.success ? output.data : null, getProcessedText(output))
     } catch (error) {
       throw toServiceError(error)
     }
